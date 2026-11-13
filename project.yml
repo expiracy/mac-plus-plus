@@ -1,7 +1,7 @@
-# XcodeGen manifest for the signed MacsPane.app. Regenerate the (git-ignored) .xcodeproj with:
+# XcodeGen manifest for the signed mac++.app. Regenerate the (git-ignored) .xcodeproj with:
 #   xcodegen generate
-# The app reuses the package's MacsPaneKit library, so `swift run macspane` and the .app share every line.
-name: MacsPane
+# The app reuses the package's MacPlusPlusKit library, so `swift run mac-plus-plus` and the .app share every line.
+name: MacPlusPlus
 options:
   bundleIdPrefix: com.jgray
   deploymentTarget:
@@ -9,11 +9,11 @@ options:
   createIntermediateGroups: true
 
 packages:
-  MacsPane:
+  MacPlusPlus:
     path: .
 
 targets:
-  MacsPane:
+  MacPlusPlus:
     type: application
     platform: macOS
     sources:
@@ -24,27 +24,28 @@ targets:
         type: file
         buildPhase: resources
     dependencies:
-      - package: MacsPane
-        product: MacsPaneKit
+      - package: MacPlusPlus
+        product: MacPlusPlusKit
     settings:
       base:
-        PRODUCT_NAME: MacsPane
-        PRODUCT_BUNDLE_IDENTIFIER: com.jgray.macspane
-        MARKETING_VERSION: "1.0.0"
+        PRODUCT_NAME: mac++
+        PRODUCT_MODULE_NAME: MacPlusPlusApp
+        PRODUCT_BUNDLE_IDENTIFIER: com.jgray.mac-plus-plus
+        MARKETING_VERSION: "0.1.0"
         CURRENT_PROJECT_VERSION: "1"
         SWIFT_VERSION: "5.0"
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_LSUIElement: YES            # menu-bar only, no Dock icon
-        INFOPLIST_KEY_CFBundleDisplayName: "MacsPane"
+        INFOPLIST_KEY_CFBundleDisplayName: "mac++"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         CODE_SIGN_STYLE: Manual
         CODE_SIGN_IDENTITY: "-"
         DEVELOPMENT_TEAM: ""
 
 schemes:
-  MacsPane:
+  MacPlusPlus:
     build:
       targets:
-        MacsPane: all
+        MacPlusPlus: all
     run:
       config: Debug

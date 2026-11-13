@@ -1,12 +1,12 @@
 #!/bin/sh
 # Regenerate App/AppIcon.icns and App/AppIcon.icon from the logo's drawing code
-# (Sources/MacsPaneKit/Branding/MacsPaneLogo.swift). Run after changing the logo; commit the results.
+# (Sources/MacsPaneKit/Branding/MacsPaneLogo.swift; mac++ wears MacsPane's icon for now). Run after changing the logo; commit the results.
 set -eu
 root="$(cd "$(dirname "$0")/.." && pwd)"
 work="$root/.build/icon"
 rm -rf "$work" && mkdir -p "$work/AppIcon.iconset"
-swift build --product macspane --package-path "$root"
-"$(swift build --show-bin-path --package-path "$root")/macspane" --export-icon "$work"
+swift build --product mac-plus-plus --package-path "$root"
+"$(swift build --show-bin-path --package-path "$root")/mac-plus-plus" --export-icon "$work"
 for size in 16 32 128 256 512; do
   sips -z "$size" "$size" "$work/icon-1024-dark.png" --out "$work/AppIcon.iconset/icon_${size}x${size}.png" >/dev/null
   double=$((size * 2))

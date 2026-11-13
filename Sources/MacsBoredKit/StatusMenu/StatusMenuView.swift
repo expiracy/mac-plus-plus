@@ -1,5 +1,6 @@
 #if canImport(AppKit)
 import SwiftUI
+import MacsShared
 
 /// What the menu-bar dropdown shows and does. Rebuilt on open, after every click that leaves it
 /// open, and once a second while it is open (what is in front changes under it).
@@ -72,6 +73,8 @@ final class StatusMenuModel: ObservableObject {
 /// the titled lists. Rows lead with a tinted icon tile or the app's own icon. Setup and Quit sit at the foot.
 struct StatusMenuView: View {
     @ObservedObject var model: StatusMenuModel
+    /// Drawn as a page of mac++'s dropdown, which supplies the bubble and the width.
+    var embedded = false
     @State private var hoveredRow: String?
     @State private var hoveredTrash: String?
 
@@ -99,10 +102,7 @@ struct StatusMenuView: View {
             footer
         }
         .padding(Metric.edge)
-        .padding(.top, SpeechBubbleShape.standardNub.height)
-        .frame(width: Metric.width)
-        .background(SpeechBubbleShape(nubX: model.nubX).fill(Color(nsColor: .windowBackgroundColor)))
-        .overlay(SpeechBubbleShape(nubX: model.nubX).stroke(Color.primary.opacity(0.12), lineWidth: 1))
+        .modifier(MenuBubble(drawn: !embedded, width: Metric.width, nubX: model.nubX))
     }
 
     // MARK: - Bands
@@ -379,4 +379,23 @@ struct StatusMenuView: View {
     }
 }
 
+/// The dropdown's own bubble, under the menu-bar icon or in setup's picture of it; left off when the
+/// view is a page of mac++'s dropdown, which draws one bubble round every page.
+private struct MenuBubble: ViewModifier {
+    let drawn: Bool
+    let width: CGFloat
+    let nubX: CGFloat?
+
+    func body(content: Content) -> some View {
+        if drawn {
+            content
+                .padding(.top, SpeechBubbleShape.standardNub.height)
+                .frame(width: width)
+                .background(SpeechBubbleShape(nubX: nubX).fill(Color(nsColor: .windowBackgroundColor)))
+                .overlay(SpeechBubbleShape(nubX: nubX).stroke(Color.primary.opacity(0.12), lineWidth: 1))
+        } else {
+            content
+        }
+    }
+}
 #endif

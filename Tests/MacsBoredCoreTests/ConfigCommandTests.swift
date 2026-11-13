@@ -1,7 +1,7 @@
 import XCTest
 @testable import MacsBoredCore
 
-/// `macsbored check` and `macsbored path`, for scripts and agents.
+/// `mac-plus-plus macsbored check` and `macsbored path`, for scripts and agents.
 final class ConfigCommandTests: XCTestCase {
     private var file: URL!
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Wrap a built macspane binary in MacsPane.app: the bundle layout, its icon and its Info.plist.
+# Wrap a built mac-plus-plus binary in mac++.app: the bundle layout, its icon and its Info.plist.
 # Signing is left to the caller (run.sh signs for development, release.sh for distribution).
-#   scripts/make_app.sh <binary> <MacsPane.app> <version> <build>
+#   scripts/make_app.sh <binary> <mac++.app> <version> <build>
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BIN="$1"
@@ -11,17 +11,17 @@ BUILD="$4"
 
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-cp "$BIN" "$APP/Contents/MacOS/MacsPane"
+cp "$BIN" "$APP/Contents/MacOS/mac++"
 cp "$ROOT/App/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
 cp "$ROOT/LICENSE" "$APP/Contents/Resources/LICENSE"
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
-  <key>CFBundleExecutable</key><string>MacsPane</string>
-  <key>CFBundleIdentifier</key><string>com.jgray.macspane</string>
-  <key>CFBundleName</key><string>MacsPane</string>
-  <key>CFBundleDisplayName</key><string>MacsPane</string>
+  <key>CFBundleExecutable</key><string>mac++</string>
+  <key>CFBundleIdentifier</key><string>com.jgray.mac-plus-plus</string>
+  <key>CFBundleName</key><string>mac++</string>
+  <key>CFBundleDisplayName</key><string>mac++</string>
   <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>$VERSION</string>

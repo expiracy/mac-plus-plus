@@ -1,6 +1,7 @@
 #if canImport(AppKit)
 import AppKit
 import SwiftUI
+import MacsShared
 import MacsBoredCore
 
 /// The permission dropdown, hanging under System Settings: the app's icon and two numbered steps (drag

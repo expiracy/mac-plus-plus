@@ -7,7 +7,7 @@ public enum ConfigSchema {
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "MacsBored settings",
-  "description": "MacsBored's settings file. MacsBored watches it: a valid change applies within a second; a file with a mistake is left alone, the last good settings keep running and the menu bar names the line. Fields MacsBored doesn't know are kept. Check a file with: macsbored check",
+  "description": "MacsBored's settings file. MacsBored watches it: a valid change applies within a second; a file with a mistake is left alone, the last good settings keep running and the menu bar names the line. Fields MacsBored doesn't know are kept. Check a file with: mac-plus-plus macsbored check",
   "type": "object",
   "properties": {
     "$schema": {

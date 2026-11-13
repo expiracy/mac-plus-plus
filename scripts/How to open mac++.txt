@@ -1,0 +1,27 @@
+How to open mac++ (test build)
+
+1. Drag mac++ into the Applications folder next to it.
+
+2. Open mac++ from Applications. macOS will say it can't check it for
+   malicious software, because this test build isn't signed by Apple.
+   Click Done (not Move to Trash).
+
+3. Open System Settings › Privacy & Security, scroll down to the message
+   about mac++, and click Open Anyway. Confirm with your password or
+   Touch ID. You only do this once.
+
+4. mac++ has no Dock icon: it lives in the menu bar, and setup opens the
+   first time, MacsPane's and then MacsBored's. In setup, click Grant
+   Access and switch mac++ on in System Settings › Privacy & Security ›
+   Accessibility. MacsPane needs this to move and resize other apps'
+   windows; MacsBored needs it to see keys before macOS acts on them and
+   to read whether a window is full screen. Later test builds keep this
+   permission.
+
+To update: quit mac++ from its menu, drag the new one into Applications
+and choose Replace, then open it the same way.
+
+To remove: quit mac++ from its menu (which gives macOS back all its
+shortcuts), delete it from Applications, and delete
+~/Library/Application Support/MacsPane and
+~/Library/Application Support/MacsBored.

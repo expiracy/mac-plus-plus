@@ -485,6 +485,8 @@ final class MacsPaneSetupController: NSObject, NSWindowDelegate {
     private var window: NSWindow?
     /// Opens the real dropdown, for the last step's Show me.
     var onShowMenu: (() -> Void)?
+    /// The window has closed, finished or not (mac++ then offers the next app's setup).
+    var onDidClose: (() -> Void)?
 
     func show(app: MacsPaneModel) {
         if let window { window.makeKeyAndOrderFront(nil); return }
@@ -525,6 +527,7 @@ final class MacsPaneSetupController: NSObject, NSWindowDelegate {
         if !NSApp.windows.contains(where: { $0.isVisible && $0 !== notification.object as? NSWindow && $0.canBecomeKey }) {
             NSApp.setActivationPolicy(.accessory)
         }
+        onDidClose?()
     }
 }
 #endif

@@ -2,9 +2,9 @@ import Foundation
 
 /// The executable's commands for scripts and agents, answered before the app starts:
 ///
-///     macsbored path            where config.json is
-///     macsbored check [file]    each problem with its line; exits 1 if there's an error
-///     macsbored schema          the JSON Schema the file follows
+///     mac-plus-plus macsbored path            where config.json is
+///     mac-plus-plus macsbored check [file]    each problem with its line; exits 1 if there's an error
+///     mac-plus-plus macsbored schema          the JSON Schema the file follows
 public enum ConfigCommand {
     public struct Outcome: Equatable, Sendable {
         public var output: String
