@@ -1,24 +1,25 @@
 // swift-tools-version: 5.10
 import PackageDescription
 
-// MacsPane, drag a window to the notch and drop it into a layout; apply presets from the menu bar.
-//   • MacsPaneCore, pure logic (layouts, presets, snap zones, config) + its tests. No AppKit.
-//   • MacsPaneKit , the AppKit/SwiftUI app: the drag tracker, the notch picker, the menu-bar
-//                    dropdown, Settings and setup.
-//   • macspane    , the executable that boots it: `swift run macspane`.
-// The signed .app is built by Xcode from project.yml and reuses MacsPaneKit.
+// MacsPane and MacsBored, side by side in one package.
+//   • MacsPaneCore / MacsPaneKit   , the window manager: drag a window to the notch to snap it.
+//   • MacsBoredCore / MacsBoredKit , macOS's shortcuts handed to remote-desktop apps, plus triggers.
+// Each Core is pure logic with its tests (no AppKit); each Kit is the AppKit/SwiftUI app.
 let package = Package(
-    name: "MacsPane",
+    name: "MacPlusPlus",
     platforms: [.macOS(.v14)],
     products: [
-        .library(name: "MacsPaneCore", targets: ["MacsPaneCore"]),
-        .library(name: "MacsPaneKit", targets: ["MacsPaneKit"]),
         .executable(name: "macspane", targets: ["MacsPane"]),
+        .executable(name: "macsbored", targets: ["MacsBored"]),
     ],
     targets: [
         .target(name: "MacsPaneCore"),
         .target(name: "MacsPaneKit", dependencies: ["MacsPaneCore"]),
         .executableTarget(name: "MacsPane", dependencies: ["MacsPaneKit"]),
         .testTarget(name: "MacsPaneCoreTests", dependencies: ["MacsPaneCore"]),
+        .target(name: "MacsBoredCore"),
+        .target(name: "MacsBoredKit", dependencies: ["MacsBoredCore"]),
+        .executableTarget(name: "MacsBored", dependencies: ["MacsBoredKit"]),
+        .testTarget(name: "MacsBoredCoreTests", dependencies: ["MacsBoredCore"]),
     ]
 )
