@@ -52,13 +52,22 @@ public struct AssignedShortcut: Codable, Equatable, Sendable {
         self.isEnabled = isEnabled
     }
 
-    private enum CodingKeys: String, CodingKey { case shortcut, action, isEnabled }
+    /// Written `keys`; files from before named it `shortcut`.
+    private enum CodingKeys: String, CodingKey { case keys, shortcut, action, isEnabled }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        self.shortcut = try c.decode(KeyShortcut.self, forKey: .shortcut)
+        self.shortcut = try c.decodeIfPresent(KeyShortcut.self, forKey: .keys)
+            ?? c.decode(KeyShortcut.self, forKey: .shortcut)
         self.action = try c.decode(ShortcutAction.self, forKey: .action)
         self.isEnabled = (try? c.decodeIfPresent(Bool.self, forKey: .isEnabled)) ?? true
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(shortcut, forKey: .keys)
+        try c.encode(action, forKey: .action)
+        try c.encode(isEnabled, forKey: .isEnabled)
     }
 }
 

@@ -18,6 +18,10 @@ enum MacsPaneMenu {
             guard let model else { return }
             model.setSnapping(!model.config.snap.enabled)
         }
+        if let issue = model.fileErrors.first {
+            let line = issue.line.map { "config.json line \($0) has a mistake" } ?? "config.json has a mistake"
+            content.warnings.append(.warning(line, actionTitle: "Show") { [weak model] in model?.openConfigFile() })
+        }
         if !model.isAuthorized {
             content.warnings.append(.warning("Snapping needs Accessibility", actionTitle: "Grant") { [weak model] in
                 model?.requestAccess()
@@ -32,6 +36,9 @@ enum MacsPaneMenu {
                     options: MacsPaneConfig.dwellChoices.map(Self.seconds),
                     selected: model.config.dwellChoiceIndex) { [weak model] index in
                 model?.setDwell(MacsPaneConfig.dwellChoices[index])
+            },
+            .command("Settings file", symbol: "doc.text", key: "settings-file") { [weak model] in
+                model?.revealConfigFile()
             },
         ]
         content.groups = [presetGroup(model), layoutGroup(model), shortcutGroup(model)]

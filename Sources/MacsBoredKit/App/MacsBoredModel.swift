@@ -213,6 +213,13 @@ final class MacsBoredModel: ObservableObject {
         onEdit(EntryDraft())
     }
 
+    /// The editor on a new passthrough app (the menu's "New passthrough app").
+    func newPassthroughApp() {
+        var draft = EntryDraft()
+        draft.tab = .passthrough
+        onEdit(draft)
+    }
+
     /// The editor on the passthrough tab with this app in it, as the Now card's "Pass through…" offers.
     func newProfile(for app: AppRef) {
         var draft = EntryDraft()

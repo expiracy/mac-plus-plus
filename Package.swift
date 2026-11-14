@@ -3,6 +3,7 @@ import PackageDescription
 
 // mac++: one menu-bar app holding MacsPane and MacsBored, each a page of one dropdown.
 //   • MacsShared                   , what both apps use: the tabbed dropdown and its bubble.
+//   • MacsSettings                 , what both settings files share: keys as text ("ctrl+opt+left") and a JSON reader that knows lines.
 //   • MacsPaneCore / MacsPaneKit   , the window manager: drag a window to the notch to snap it.
 //   • MacsBoredCore / MacsBoredKit , macOS's shortcuts handed to remote-desktop apps, plus triggers.
 //   • MacPlusPlusKit               , the app: one menu-bar icon, both apps, first-run setup.
@@ -18,10 +19,11 @@ let package = Package(
     ],
     targets: [
         .target(name: "MacsShared"),
-        .target(name: "MacsPaneCore"),
+        .target(name: "MacsSettings"),
+        .target(name: "MacsPaneCore", dependencies: ["MacsSettings"]),
         .target(name: "MacsPaneKit", dependencies: ["MacsPaneCore", "MacsShared"]),
         .testTarget(name: "MacsPaneCoreTests", dependencies: ["MacsPaneCore"]),
-        .target(name: "MacsBoredCore"),
+        .target(name: "MacsBoredCore", dependencies: ["MacsSettings"]),
         .target(name: "MacsBoredKit", dependencies: ["MacsBoredCore", "MacsShared"]),
         .testTarget(name: "MacsBoredCoreTests", dependencies: ["MacsBoredCore"]),
         .target(name: "MacPlusPlusKit", dependencies: ["MacsShared", "MacsPaneKit", "MacsBoredKit"]),

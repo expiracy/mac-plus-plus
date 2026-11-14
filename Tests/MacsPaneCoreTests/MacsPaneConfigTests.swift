@@ -54,19 +54,16 @@ private func layout(_ id: String) -> WindowLayout {
     #expect(reloaded.config.dwellMs == 400)
 }
 
-@Test func storeSetsAnUnreadableFileAsideBeforeItCanBeOverwritten() throws {
+@Test func storeNeverWritesOverAnUnreadableFile() throws {
     let url = makeTempConfigURL()
-    let aside = url.deletingPathExtension().appendingPathExtension("unreadable.json")
-    defer {
-        try? FileManager.default.removeItem(at: url)
-        try? FileManager.default.removeItem(at: aside)
-    }
+    defer { try? FileManager.default.removeItem(at: url) }
     try Data("[not json".utf8).write(to: url)
 
     let store = MacsPaneConfigStore(url: url, seed: { MacsPaneConfig(presets: [preset("seeded")]) })
     #expect(store.config == .default)   // a damaged file is not a first run: no seed
+    #expect(!store.errors.isEmpty)
     store.update { $0.dwellMs = 400 }
-    #expect(try String(contentsOf: aside, encoding: .utf8) == "[not json")
+    #expect(try String(contentsOf: url, encoding: .utf8) == "[not json")
 }
 
 @Test func theHoldTimeOffersAFewChoicesAndShowsTheNearestForAnyStoredValue() {

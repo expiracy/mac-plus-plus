@@ -23,6 +23,8 @@ struct EntryEditor: View {
     @State private var showsFile = false
     @State private var copied = false
     @State private var confirmingDelete = false
+    /// A passthrough app's shortcut list and key handling, folded away: most people keep the defaults.
+    @State private var showsAdvanced = false
     @State private var shortcutNames: [String] = []
     /// The form's own height, so the window fits it and only scrolls past `maxFormHeight`.
     @State private var formHeight: CGFloat = 400
@@ -41,16 +43,12 @@ struct EntryEditor: View {
                         .padding(.horizontal, 10)
                     identity
                     if [.remap, .open, .shortcut].contains(draft.tab) { whatItDoes }
-                    if draft.isPassthroughApp { passthroughApp } else { whereGroup }
-                    FormGroup(title: "When", caption: draft.isPassthroughApp ? pauseNote : "With no conditions it always works.") {
-                        if draft.conditions.conditions.isEmpty {
-                            FormRow(divider: false) {
-                                Text(draft.isPassthroughApp ? "Whenever one of these apps is in front" : "Always")
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                        ConditionRows(conditions: $draft.conditions)
+                    if !draft.isPassthroughApp { whereGroup }
+                    FormGroup(title: "When", caption: draft.isPassthroughApp ? pauseNote : nil) {
+                        ConditionRows(conditions: $draft.conditions,
+                                      empty: draft.isPassthroughApp ? "Whenever one of these apps is in front" : "Always")
                     }
+                    if draft.isPassthroughApp { passthroughAdvanced }
                 }
                 .padding(.horizontal, 20)
                 .padding(.vertical, 16)
@@ -142,7 +140,8 @@ struct EntryEditor: View {
     // MARK: - Name and keys
 
     private var identity: some View {
-        FormGroup {
+        FormGroup(caption: draft.isPassthroughApp
+                  ? "The app that shows the other computer: Windows App, Citrix Viewer or a virtual machine." : nil) {
             if draft.tab == .passthrough {
                 FormRow(label: "Pass through", divider: false) {
                     Picker("Pass through", selection: $draft.passMode) {
@@ -163,7 +162,13 @@ struct EntryEditor: View {
                     Toggle("On", isOn: $draft.isEnabled).toggleStyle(.switch).controlSize(.small).labelsHidden()
                 }
             }
-            if !draft.isPassthroughApp {
+            if draft.isPassthroughApp {
+                FormRow(label: "Apps", top: true) {
+                    AppChips(apps: $draft.apps, suggestions: KnownPassthroughApps.all.filter {
+                        NSWorkspace.shared.urlForApplication(withBundleIdentifier: $0.bundleID) != nil
+                    })
+                }
+            } else {
                 FormRow(label: draft.tab == .passthrough ? "Keys to pass" : "Keys", top: true) { keysControl }
             }
         }
@@ -205,6 +210,7 @@ struct EntryEditor: View {
                     }
                 }
                 .controlSize(.small)
+                .frame(minHeight: 28)
             }
             keysHint
         }
@@ -473,14 +479,36 @@ struct EntryEditor: View {
             .compactMap { app in app.bundleIdentifier.map { AppRef(bundleID: $0, name: app.localizedName ?? $0) } }
     }
 
-    @ViewBuilder private var passthroughApp: some View {
-        FormGroup(title: "Apps", caption: "The app that shows the other computer: Windows App, Citrix Viewer or a virtual machine.") {
-            FormRow(label: "Apps", top: true, divider: false) {
-                AppChips(apps: $draft.apps, suggestions: KnownPassthroughApps.all.filter {
-                    NSWorkspace.shared.urlForApplication(withBundleIdentifier: $0.bundleID) != nil
-                })
+    /// "Advanced", with what it holds in one line, opening on the shortcut list and the key handling.
+    @ViewBuilder private var passthroughAdvanced: some View {
+        Button { withAnimation(.snappy(duration: 0.2)) { showsAdvanced.toggle() } } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 10, weight: .semibold))
+                    .rotationEffect(.degrees(showsAdvanced ? 90 : 0))
+                Text("Advanced").font(.caption.weight(.semibold))
+                Text(advancedSummary).font(.caption).lineLimit(1)
+                Spacer(minLength: 0)
             }
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 10)
+            .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
+        .accessibilityLabel(showsAdvanced ? "Hide advanced settings" : "Show advanced settings")
+        if showsAdvanced { passthroughApp }
+    }
+
+    private var advancedSummary: String {
+        let all = SystemShortcutGroup.allCases.count
+        let count = draft.systemShortcuts.count
+        var parts = [count == all ? "All \(all) macOS shortcuts go to the app" : "\(count) of \(all) macOS shortcuts go to the app"]
+        if draft.captureAllKeys { parts.append("every key sent straight to it") }
+        if draft.modifierLayout != .asIs { parts.append(draft.modifierLayout.title) }
+        return parts.joined(separator: " · ")
+    }
+
+    @ViewBuilder private var passthroughApp: some View {
         let all = Set(SystemShortcutGroup.allCases)
         FormGroup(title: "macOS shortcuts sent to the app",
                   caption: "\(draft.systemShortcuts.count) of \(all.count) selected. While the app is in front, these keys reach it instead of macOS.",

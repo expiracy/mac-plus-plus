@@ -12,7 +12,6 @@ final class StatusMenuModel: ObservableObject {
     @Published var confirmingTrash: String?
     let name: String
     var onSetup: () -> Void = {}
-    var onNew: () -> Void = {}
     var onQuit: () -> Void = {}
     /// Set by the panel's owner; commands close the dropdown before they act.
     var onClose: () -> Void = {}
@@ -70,7 +69,8 @@ final class StatusMenuModel: ObservableObject {
 /// The menu-bar icon's dropdown, drawn as MacsPane draws its own: a bubble whose nub points up at
 /// the icon; the mark, the name and the main switch; then rounded cards, each under a small title:
 /// what is happening now with its one button, any warning with its fix, the general switches and
-/// the titled lists. Rows lead with a tinted icon tile or the app's own icon. Setup and Quit sit at the foot.
+/// the titled lists, each ending in its "New …" row. Rows lead with a tinted icon tile or the app's
+/// own icon. Setup and Quit sit at the foot.
 struct StatusMenuView: View {
     @ObservedObject var model: StatusMenuModel
     /// Drawn as a page of mac++'s dropdown, which supplies the bubble and the width.
@@ -199,7 +199,6 @@ struct StatusMenuView: View {
 
     private var footer: some View {
         HStack(spacing: 8) {
-            footerButton("New", symbol: "plus", key: nil, action: model.onNew)
             footerButton("Setup", symbol: "sparkles", key: nil, action: model.onSetup)
             footerButton("Quit", symbol: "power", key: "⌘Q", action: model.onQuit)
         }

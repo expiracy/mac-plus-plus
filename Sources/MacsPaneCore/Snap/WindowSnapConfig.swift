@@ -48,6 +48,21 @@ public struct WindowSnapConfig: Codable, Equatable, Sendable {
         self.titleBarBandHeight = try c.decodeIfPresent(Int.self, forKey: .titleBarBandHeight) ?? d.titleBarBandHeight
     }
 
+    private enum CodingKeys: String, CodingKey {
+        case enabled, regions, showFullScreenPreview, dragActivationDistance, titleBarBandHeight
+    }
+
+    /// `regions` is written only when it differs from the default: the picker no longer reads it, and
+    /// nineteen rows nobody uses would bury the settings people (and agents) do edit.
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(enabled, forKey: .enabled)
+        if regions != WindowSnapZoneEntry.defaultRegions { try c.encode(regions, forKey: .regions) }
+        try c.encode(showFullScreenPreview, forKey: .showFullScreenPreview)
+        try c.encode(dragActivationDistance, forKey: .dragActivationDistance)
+        try c.encode(titleBarBandHeight, forKey: .titleBarBandHeight)
+    }
+
     // MARK: - Resilient region decoding / migration
 
     /// Pre-customisation `config.json` named a preset under `zoneSet`; current files store an ordered

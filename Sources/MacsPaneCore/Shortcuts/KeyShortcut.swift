@@ -1,4 +1,5 @@
 import Foundation
+import MacsSettings
 
 /// A key combination pressed anywhere to run a MacsPane action: a key, by its hardware key code, and
 /// the modifiers held with it. `character` is what the key typed when it was recorded, on the
@@ -52,31 +53,51 @@ public struct KeyShortcut: Hashable, Sendable {
         if let character, !character.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             return character.uppercased()
         }
+        if let name = KeyText.usLetters[keyCode] { return name }
         return "Key \(keyCode)"
     }
 
     /// Keys that type nothing visible, by key code (the US-layout hardware codes macOS uses on
     /// every layout).
-    static let specialKeyNames: [UInt16: String] = [
-        36: "↩", 48: "⇥", 49: "Space", 51: "⌫", 53: "⎋", 76: "⌤", 117: "⌦",
-        123: "←", 124: "→", 125: "↓", 126: "↑",
-        115: "↖", 119: "↘", 116: "⇞", 121: "⇟",
-        122: "F1", 120: "F2", 99: "F3", 118: "F4", 96: "F5", 97: "F6", 98: "F7", 100: "F8",
-        101: "F9", 109: "F10", 103: "F11", 111: "F12", 105: "F13", 107: "F14", 113: "F15",
-        106: "F16", 64: "F17", 79: "F18", 80: "F19", 90: "F20",
-    ]
+    static let specialKeyNames = KeyText.symbolNames
 
-    static let functionKeys = Set(specialKeyNames.filter { $0.value.hasPrefix("F") }.keys)
+    static let functionKeys = KeyText.functionKeys
+}
+
+/// Keys as text, as the settings file holds them: "ctrl+opt+left", "hyper+N", "F13", or the menu's
+/// "⌃⌥←" (`MacsSettings.KeyText`, the same words MacsBored's file uses).
+extension KeyShortcut {
+    /// The keys `text` names, or nil when it names none.
+    public init?(text: String) {
+        guard let (code, bits) = KeyText.parse(text) else { return nil }
+        self.init(keyCode: code, modifiers: Modifiers(rawValue: bits))
+    }
+
+    public var text: String { KeyText.write(keyCode: keyCode, modifiers: modifiers.rawValue) }
 }
 
 extension KeyShortcut: Codable {
     private enum CodingKeys: String, CodingKey { case keyCode, modifiers, character }
 
-    /// A shortcut with no key code means nothing and throws, so the list holding it drops it alone.
+    /// Written as text ("ctrl+opt+left"). Read as text, or as the key code and modifier bits files
+    /// held before. Keys that name nothing throw, so the list holding them drops them alone.
     public init(from decoder: Decoder) throws {
+        if let text = try? decoder.singleValueContainer().decode(String.self) {
+            guard let keys = KeyShortcut(text: text) else {
+                throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath,
+                                                        debugDescription: "“\(text)” isn't keys"))
+            }
+            self = keys
+            return
+        }
         let c = try decoder.container(keyedBy: CodingKeys.self)
         self.keyCode = try c.decode(UInt16.self, forKey: .keyCode)
         self.modifiers = (try? c.decodeIfPresent(Modifiers.self, forKey: .modifiers)) ?? []
         self.character = try? c.decodeIfPresent(String.self, forKey: .character)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.singleValueContainer()
+        try c.encode(text)
     }
 }

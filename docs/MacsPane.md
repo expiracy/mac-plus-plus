@@ -43,15 +43,55 @@ one, pick the layouts the notch offers, and switch on any suggested shortcuts (�
 halves, ⌃⌥↩ to fill, ⌃⌥C to centre), trying them on the samples first. The menu's Setup button opens
 it again.
 
+## The settings file
+
+Everything lives in `~/Library/Application Support/MacsPane/config.json`, written to be edited by hand,
+by scripts or by an AI agent. MacsPane watches it: a change applies as soon as it's saved. A file that
+isn't JSON is never written over, the last good settings keep running, and the menu names the line.
+Every field is optional, and anything a field can't use (keys that name nothing, a shortcut whose
+preset doesn't exist) is left out alone, so a mistake never resets your presets.
+
+```json
+{
+  "$schema": "./config.schema.json",
+  "dwellMs": 600,
+  "windows": { "dragBarLayoutIDs": ["halves", "thirds", "fill"] },
+  "presets": [
+    { "id": "work", "name": "Work", "slots": [
+      { "region": "leftTwoThirds", "binding": { "kind": "app", "bundleID": "com.microsoft.VSCode" } },
+      { "region": "rightThird", "binding": { "kind": "app", "bundleID": "com.apple.Safari" }, "launchIfClosed": true }
+    ] }
+  ],
+  "shortcuts": [
+    { "keys": "ctrl+opt+left", "action": { "kind": "layoutBox", "layoutID": "halves", "box": 0 } },
+    { "keys": "hyper+W", "action": { "kind": "preset", "id": "work" } }
+  ]
+}
+```
+
+Keys are written as MacsBored writes them (`ctrl+opt+left`, `hyper+1`, `F13`). A box is a zone's name
+(`leftHalf`, `topRightQuarter`, `maximize`…) or `{ "kind": "custom", "rect": { "x", "y", "width",
+"height" } }` in fractions of the screen, measured from the bottom left. Ids are whatever you like; a
+shortcut names a preset or layout by its id and a box by its number from 0. The built-in layouts are
+`halves`, `twoThirds`, `fill`, `desk`, `quarters`, `thirds` and `centre`. `config.schema.json` beside the
+file describes every field, with each built-in layout's boxes.
+
+From a terminal, mac++'s executable answers three commands without starting the app:
+
+```bash
+"/Applications/mac++.app/Contents/MacOS/mac++" macspane check
+```
+
+`macspane check [file]` prints each problem with its line and exits 1 on an error (a warning is a field
+MacsPane doesn't know, usually a misspelling); `macspane path` prints where the file is; `macspane schema`
+prints the schema. Files from before keys were text are rewritten in this shape the first time mac++ opens them.
+
 ## How it's put together
 
 | Target | What it holds |
 |---|---|
 | `MacsPaneCore` | Pure logic with no AppKit: layouts, presets, snap zones, the picker's geometry, and the config file. Unit-tested. |
 | `MacsPaneKit` | The app: the drag tracker (global mouse monitors, never consuming events), the notch panel and picker, Accessibility window moves, MacsPane's page of the dropdown, the box editor and setup. `MacsPaneFeature` is what mac++ starts. |
-
-Your choices are saved to `~/Library/Application Support/MacsPane/config.json`. Every field decodes with a
-default, so a file from an older version never resets your presets.
 
 `mac-plus-plus --snapshot-macspane <dir>` renders each surface (the dropdown, the notch states, the box editor,
 setup and the permission card) to PNGs without touching your windows.

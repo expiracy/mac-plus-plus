@@ -19,6 +19,25 @@ picks up an existing setup as it is. mac++ has its own bundle identifier (`com.j
 so it needs Accessibility granted once, and the old MacsPane and MacsBored apps should be quit before
 it starts, since the two copies would otherwise both act on the same drags and keys.
 
+## Settings files
+
+Each tool keeps its settings in one JSON file meant to be edited by people, scripts and AI agents as
+much as through the menu. Ask an agent to "add ⌃⌥W to send the window to the left two thirds" and it
+can do it in the file; the running app picks the change up as soon as it's saved.
+
+| | MacsPane | MacsBored |
+|---|---|---|
+| File | `~/Library/Application Support/MacsPane/config.json` | `~/Library/Application Support/MacsBored/config.json` |
+| Schema | `config.schema.json` beside it, linked by `$schema` | the same |
+| Check an edit | `mac++ macspane check` | `mac++ macsbored check` |
+| What's in it | presets, layouts, shortcuts, the hold time | passthrough apps, triggers, the pause keys, Caps Lock as Hyper |
+
+Both write keys the same way (`ctrl+opt+left`, `hyper+N`, `cmd+space`) and apps by bundle ID. `check`
+prints each problem as `file:line: error|warning: …` and exits 1 on an error. A file with a mistake is
+never written over: the last good settings keep running and the menu names the line. The menu's
+*Settings file* row shows the file in Finder. Each tool's page has the details:
+[MacsPane](docs/MacsPane.md#the-settings-file), [MacsBored](docs/MacsBored.md#the-settings-file).
+
 ## Installing a test build
 
 Requires macOS 14 or later, on Apple silicon or Intel.
@@ -58,6 +77,7 @@ The executable also takes these, for scripts, agents and looking at a change:
 
 | Arguments | What they do |
 |---|---|
+| `macspane path`, `macspane check [file]`, `macspane schema` | MacsPane's settings file, without starting the app. |
 | `macsbored path`, `macsbored check [file]`, `macsbored schema` | MacsBored's settings file, without starting the app. |
 | `--smoke-test` | Launch, then quit after 1.5 s. |
 | `--open-menu [macspane\|macsbored]` | Open the dropdown, on that page. |
@@ -66,6 +86,7 @@ The executable also takes these, for scripts, agents and looking at a change:
 | `--open-editor remap\|open\|shortcut\|passthrough` | Open MacsBored's editor on a new entry. |
 | `--snapshot-menu <dir>` | Write the dropdown's pages, light and dark, as PNGs, then quit. |
 | `--snapshot-macspane <dir>` | Write MacsPane's other surfaces as PNGs, then quit. |
+| `--snapshot-macsbored <dir>` | Write MacsBored's editor tabs and setup steps as PNGs, then quit. |
 
 ### Releasing
 
@@ -92,6 +113,7 @@ identifier would get it too, so use a Developer ID before a wide release.
 | Target | What it holds |
 |---|---|
 | `MacsShared` | What both tools use: the tabbed dropdown under the menu-bar icon (`TabbedMenuController`), the `MenuTab` each tool provides, and the bubble they're drawn in. |
+| `MacsSettings` | What both settings files share: keys as text (`ctrl+opt+left`) and a JSON reader that knows each value's line, for `check`. No AppKit. |
 | `MacsPaneCore`, `MacsPaneKit` | MacsPane: pure logic with its tests, then the app (`MacsPaneFeature`). |
 | `MacsBoredCore`, `MacsBoredKit` | MacsBored: pure logic with its tests, then the app (`MacsBoredFeature`). |
 | `MacPlusPlusKit` | The app itself: the menu-bar icon, both tools started and stopped together, and first-run setup one tool after the other. |
