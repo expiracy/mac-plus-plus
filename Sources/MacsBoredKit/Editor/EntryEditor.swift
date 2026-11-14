@@ -278,12 +278,9 @@ struct EntryEditor: View {
                         ForEach(shortcutChoices, id: \.self) { Text($0).tag($0) }
                     }
                     .labelsHidden()
-                    .frame(maxWidth: .infinity)
-                }
-                FormRow {
-                    Spacer()
+                    .fixedSize()
                     Button("Open Shortcuts") { NSWorkspace.shared.open(URL(fileURLWithPath: "/System/Applications/Shortcuts.app")) }
-                        .buttonStyle(.borderless).controlSize(.small)
+                    Spacer(minLength: 0)
                 }
             case .passthrough:
                 EmptyView()
