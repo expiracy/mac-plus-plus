@@ -149,23 +149,39 @@ struct NewShortcutView: View {
 
     var body: some View {
         let config = model.app.config
-        VStack(alignment: .leading, spacing: 12) {
-            SettingsSection("Keys", footer: keysNote) {
-                KeysField(model: model)
+        let nothingToPick = config.windows.layoutCatalog.isEmpty && config.presets.isEmpty
+        VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 6) {
+                StepHeading(number: 1, title: "Keys", hint: "What you'll press", done: model.keys != nil)
+                SettingsSection(footer: keysNote) {
+                    KeysField(model: model)
+                }
             }
-            if config.windows.layoutCatalog.isEmpty && config.presets.isEmpty {
-                Text("No layouts or presets yet.").font(.callout).foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, minHeight: 44)
-            } else {
-                PickerStrip(model: model)
-                bigScreen(config)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 2)
-                Text(model.summary + (model.replacing.map { " Replaces \($0.displayName)." } ?? ""))
-                    .font(.caption).foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                    .frame(maxWidth: .infinity)
+            VStack(alignment: .leading, spacing: 8) {
+                // The first layout is on show when the page opens, but nothing is picked until a
+                // box (or a preset) is.
+                StepHeading(number: 2, title: "What they do", hint: "A layout's box, or a preset",
+                            done: model.target != nil)
+                if nothingToPick {
+                    Text("No layouts or presets yet.").font(.callout).foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                } else {
+                    PickerStrip(model: model)
+                }
             }
+            if !nothingToPick, model.shown != nil {
+                VStack(alignment: .leading, spacing: 8) {
+                    StepHeading(number: 3, title: thirdStep.title, hint: thirdStep.hint, done: model.target != nil)
+                    bigScreen(config)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 2)
+                    Text(model.summary + (model.replacing.map { " Replaces \($0.displayName)." } ?? ""))
+                        .font(.caption).foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: .infinity)
+                }
+            }
+            Divider()
             HStack {
                 Spacer()
                 Button("Cancel") { leave() }
@@ -205,10 +221,47 @@ struct NewShortcutView: View {
         closePage?()
     }
 
+    /// The last step: a layout's box is clicked; a preset is only looked over.
+    private var thirdStep: (title: String, hint: String) {
+        if case .preset? = model.shown { return ("The preset", "What it puts where") }
+        return ("Which box", "Click where the window goes")
+    }
+
     private var keysNote: String? {
         if let hint = model.hint { return hint }
         if let from = model.takenFrom { return "Now on \(from): adding moves it here." }
         return nil
+    }
+}
+
+/// A step of the page: its number (a tick once it's done), what it is, and what to do there.
+private struct StepHeading: View {
+    let number: Int
+    let title: String
+    let hint: String
+    let done: Bool
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 7) {
+            ZStack {
+                Circle().fill(done ? Color.accentColor : Color.secondary.opacity(0.25))
+                if done {
+                    Image(systemName: "checkmark").font(.system(size: 9, weight: .bold))
+                } else {
+                    Text("\(number)").font(.system(size: 10, weight: .semibold, design: .rounded))
+                }
+            }
+            .foregroundStyle(done ? Color.white : Color.primary)
+            .frame(width: 17, height: 17)
+            .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 4 }
+            Text(title).font(.subheadline.weight(.semibold))
+            Text(hint).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 2)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Step \(number), \(title)\(done ? ", done" : ""). \(hint)")
+        .accessibilityAddTraits(.isHeader)
     }
 }
 
@@ -247,7 +300,7 @@ private struct PickerStrip: View {
             heading("Presets")
             if config.presets.isEmpty {
                 Text("None yet.").font(.caption).foregroundStyle(.tertiary).padding(.horizontal, 4)
-                    .frame(height: Self.rowHeight, alignment: .leading)
+                    .frame(height: Self.rowHeight + SidewaysRow<EmptyView>.lane, alignment: .leading)
             } else {
                 SidewaysRow(height: Self.rowHeight) {
                     HStack(spacing: 6) {
@@ -289,10 +342,11 @@ private struct PickerStrip: View {
 
 /// A row of fixed height that scrolls sideways when its content is wider than it: by a trackpad's
 /// sideways swipe, or by a mouse's wheel, which would otherwise scroll the page (a trackpad's up-and-down
-/// swipe still does). A thin scroll bar lies over its bottom edge then (its thumb shows how much is in
-/// view, and drags); as macOS's overlay bars do, it shows while the row is scrolled, pointed at or
-/// dragged, and when the page opens, then fades. A row that fits never shows it. All SwiftUI, so it
-/// scales with the menu's Size.
+/// swipe still does). A thin scroll bar runs in a lane of its own under the row then, never over the
+/// names (its thumb shows how much is in view, and drags); as macOS's overlay bars do, it shows while
+/// the row is scrolled, pointed at or dragged, and when the page opens, then fades. A row that fits
+/// never shows it, but keeps the lane, so its height doesn't change. All SwiftUI, so it scales with
+/// the menu's Size.
 private struct SidewaysRow<Content: View>: View {
     let height: CGFloat
     @ViewBuilder let content: Content
@@ -300,29 +354,32 @@ private struct SidewaysRow<Content: View>: View {
     @State private var hovering = false
     @State private var wheel: Any?
 
+    /// The scroll bar's lane under the row: a gap, then the bar.
+    static var lane: CGFloat { 9 }
+
     var body: some View {
-        GeometryReader { outer in
-            content
-                .fixedSize()
-                .background(GeometryReader { inner in
-                    Color.clear.onChange(of: inner.size.width, initial: true) { _, width in scroller.setTotal(width) }
-                })
-                .offset(x: -scroller.offset)
-                .frame(width: outer.size.width, height: height, alignment: .leading)
-                .onChange(of: outer.size.width, initial: true) { _, width in scroller.setVisible(width) }
-        }
-        .frame(height: height)
-        .clipped()
-        .contentShape(Rectangle())
-        .overlay(alignment: .bottom) {
+        VStack(spacing: 0) {
+            GeometryReader { outer in
+                content
+                    .fixedSize()
+                    .background(GeometryReader { inner in
+                        Color.clear.onChange(of: inner.size.width, initial: true) { _, width in scroller.setTotal(width) }
+                    })
+                    .offset(x: -scroller.offset)
+                    .frame(width: outer.size.width, height: height, alignment: .leading)
+                    .onChange(of: outer.size.width, initial: true) { _, width in scroller.setVisible(width) }
+            }
+            .frame(height: height)
+            .clipped()
             SidewaysScrollBar(scroller: scroller)
                 .frame(height: 7)
-                .padding(.bottom, 1)
+                .padding(.top, Self.lane - 7)
                 .opacity(scroller.overflows && (scroller.isActive || hovering) ? 1 : 0)
                 .allowsHitTesting(scroller.overflows && (scroller.isActive || hovering))
                 .animation(.easeOut(duration: 0.25), value: scroller.isActive || hovering)
                 .accessibilityHidden(true)
         }
+        .contentShape(Rectangle())
         .onHover { inside in
             hovering = inside
             inside ? listen() : stopListening()
