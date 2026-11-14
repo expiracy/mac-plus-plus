@@ -1,4 +1,5 @@
 #if canImport(AppKit)
+import MacsShared
 import AppKit
 import Combine
 import MacsBoredCore
@@ -24,7 +25,6 @@ final class MacsBoredModel: ObservableObject {
     var isRecording = false { didSet { pushSetup() } }
 
     var onEdit: (EntryDraft) -> Void = { _ in }
-    var onShowSetup: () -> Void = {}
     var onPlanChange: (PassthroughPlan, Bool) -> Void = { _, _ in }
 
     private let store: MacsBoredConfigStore
@@ -91,22 +91,24 @@ final class MacsBoredModel: ObservableObject {
     }
 
     private func recompute() {
-        let profiles = config.passthroughEnabled ? config.profiles : []
+        let profiles = config.isEnabled ? config.profiles : []
         let next = PassthroughPlanner.plan(profiles: profiles, context: context, paused: isPaused || isRecording)
         hotKeys.move(to: next.disabledHotKeys)
         if next != plan {
             plan = next
-            onPlanChange(next, config.passthroughEnabled)
+            onPlanChange(next, config.isEnabled)
         }
         pushSetup()
     }
 
     private func pushSetup() {
+        // Switched off, MacsBored lets every key through: no triggers, no pause keys, no Hyper.
+        let off = isRecording || !config.isEnabled
         tap.setup = KeyRouter.Setup(plan: isRecording ? .inactive : plan,
-                                    triggers: isRecording ? [] : config.triggers,
+                                    triggers: off ? [] : config.triggers,
                                     context: context,
-                                    pauseKeys: isRecording ? nil : config.pauseKeys,
-                                    hyperKeyEnabled: config.hyperKeyEnabled && !hyperBlocked)
+                                    pauseKeys: off ? nil : config.pauseKeys,
+                                    hyperKeyEnabled: config.isEnabled && config.hyperKeyEnabled && !hyperBlocked)
     }
 
     private func handle(_ decision: KeyDecision) {
@@ -145,7 +147,7 @@ final class MacsBoredModel: ObservableObject {
         applyHyper()
         applyLogin()
         recompute()
-        onPlanChange(plan, config.passthroughEnabled)
+        onPlanChange(plan, config.isEnabled)
     }
 
     func revealConfigFile() {
@@ -165,11 +167,14 @@ final class MacsBoredModel: ObservableObject {
             pausedFor = context.bundleID
         }
         recompute()
-        onPlanChange(plan, config.passthroughEnabled)
+        onPlanChange(plan, config.isEnabled)
     }
 
-    func setPassthroughEnabled(_ on: Bool) {
-        update { $0.passthroughEnabled = on }
+    /// MacsBored's main switch: off, it lets every key through and macOS keeps all its shortcuts.
+    func setEnabled(_ on: Bool) {
+        update { $0.isEnabled = on }
+        applyHyper()
+        pushSetup()
     }
 
     func setOpenAtLogin(_ on: Bool) {
@@ -181,19 +186,9 @@ final class MacsBoredModel: ObservableObject {
         if let wanted = config.openAtLogin, wanted != LoginItem.isEnabled { LoginItem.setEnabled(wanted) }
     }
 
-    func setHyperKey(_ on: Bool) {
-        update { $0.hyperKeyEnabled = on }
-        applyHyper()
-        pushSetup()
-    }
-
     private func applyHyper() {
-        let outcome = HyperKeyMapping.set(config.hyperKeyEnabled)
+        let outcome = HyperKeyMapping.set(config.isEnabled && config.hyperKeyEnabled)
         hyperBlocked = outcome == .blockedByOtherMapping
-    }
-
-    func setPauseKeys(_ keys: KeyCombo?) {
-        update { $0.pauseKeys = keys }
     }
 
     func requestAccess() {
@@ -209,22 +204,9 @@ final class MacsBoredModel: ObservableObject {
     // MARK: - Entries
 
     /// The editor on a new entry; its tabs say what it becomes.
-    func newEntry() {
-        onEdit(EntryDraft())
-    }
-
-    /// The editor on a new passthrough app (the menu's "New passthrough app").
-    func newPassthroughApp() {
+    func newEntry(_ tab: EntryDraft.Tab = .remap) {
         var draft = EntryDraft()
-        draft.tab = .passthrough
-        onEdit(draft)
-    }
-
-    /// The editor on the passthrough tab with this app in it, as the Now card's "Pass through…" offers.
-    func newProfile(for app: AppRef) {
-        var draft = EntryDraft()
-        draft.tab = .passthrough
-        draft.apps = [app]
+        draft.tab = tab
         onEdit(draft)
     }
 
@@ -329,7 +311,7 @@ final class MacsBoredModel: ObservableObject {
         config = store.config
         fileIssues = store.issues
         recompute()
-        onPlanChange(plan, config.passthroughEnabled)
+        onPlanChange(plan, config.isEnabled)
     }
 }
 #endif

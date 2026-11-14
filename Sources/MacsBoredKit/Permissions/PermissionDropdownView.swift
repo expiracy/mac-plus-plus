@@ -25,7 +25,7 @@ struct PermissionDropdownView: View {
             appIcon
             if model.granted {
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("\(appName) can see your keys").font(.headline)
+                    Text("\(appName) can move your windows and see your keys").font(.headline)
                     Text("You're all set. This closes now.").font(.callout).foregroundStyle(.secondary)
                 }
             } else {
@@ -66,7 +66,7 @@ struct PermissionDropdownView: View {
 
     /// The app's icon, and the thing you drag: its payload is the app bundle itself.
     @ViewBuilder private var appIcon: some View {
-        let image = MacsBoredLogo(size: 52)
+        let image = MacPlusPlusLogo(size: 52)
             .scaleEffect(hovered && !model.granted ? 1.06 : 1)
             .shadow(color: .black.opacity(hovered ? 0.25 : 0.12), radius: hovered ? 6 : 3, y: 2)
             .animation(.easeOut(duration: 0.12), value: hovered)

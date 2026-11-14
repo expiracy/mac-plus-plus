@@ -34,7 +34,7 @@ final class ConfigStoreTests: XCTestCase {
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         try Data(#"{"passthroughEnabled": false, "hyperKeyEnabled": true, "profiles": [], "triggers": []}"#.utf8).write(to: legacy)
         let store = MacsBoredConfigStore(url: url, legacyURL: legacy)
-        XCTAssertFalse(store.config.passthroughEnabled)
+        XCTAssertFalse(store.config.isEnabled)
         XCTAssertTrue(store.config.hyperKeyEnabled)
         XCTAssertTrue(try onDisk().contains(#""capsLockAsHyper": true"#))
     }
@@ -66,14 +66,14 @@ final class ConfigStoreTests: XCTestCase {
         let broken = "{\n  \"enabled\": nope\n}"
         try put(broken)
         XCTAssertTrue(store.reload())
-        XCTAssertFalse(store.config.passthroughEnabled, "the last good settings")
+        XCTAssertFalse(store.config.isEnabled, "the last good settings")
         XCTAssertEqual(store.errors.map(\.line), [2])
         XCTAssertThrowsError(try store.save(MacsBoredConfig()))
         XCTAssertEqual(try onDisk(), broken, "the hand edit is left alone")
 
         try put(#"{"enabled": true}"#)
         XCTAssertTrue(store.reload())
-        XCTAssertTrue(store.config.passthroughEnabled)
+        XCTAssertTrue(store.config.isEnabled)
         XCTAssertEqual(store.issues, [])
     }
 

@@ -1,6 +1,6 @@
 #!/bin/sh
 # Regenerate App/AppIcon.icns and App/AppIcon.icon from the logo's drawing code
-# (Sources/MacsPaneKit/Branding/MacsPaneLogo.swift; mac++ wears MacsPane's icon for now). Run after changing the logo; commit the results.
+# (Sources/MacsShared/Branding/MacPlusPlusLogo.swift). Run after changing the logo; commit the results.
 set -eu
 root="$(cd "$(dirname "$0")/.." && pwd)"
 work="$root/.build/icon"

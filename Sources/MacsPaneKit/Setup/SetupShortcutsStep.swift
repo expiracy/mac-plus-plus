@@ -1,4 +1,5 @@
 #if canImport(AppKit)
+import MacsShared
 import AppKit
 import SwiftUI
 import MacsPaneCore
@@ -118,7 +119,7 @@ struct SetupShortcutsStep: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            SetupIntroRow(text: "Click a sample window, then press keys you've switched on. Nothing on your Mac moves.")
+            LessonIntro(text: "Click a sample window, then press keys you've switched on. Nothing on your Mac moves.")
             SetupDesktop(height: SetupStage.height) {
                 ZStack(alignment: .top) {
                     SetupRestingNotch()
@@ -173,7 +174,7 @@ struct SetupShortcutsStep: View {
     private func suggestionRow(_ suggestion: ShortcutSuggestion) -> some View {
         let config = app.config
         let on = config.isOn(suggestion)
-        return SetupCard(padding: 8) {
+        return ContentCard(padding: 8) {
             HStack(spacing: 10) {
                 if let (boxes, box) = boxes(of: suggestion) {
                     MacsPaneLayoutGlyph(boxes: boxes, size: CGSize(width: 34, height: 22), highlighted: box)

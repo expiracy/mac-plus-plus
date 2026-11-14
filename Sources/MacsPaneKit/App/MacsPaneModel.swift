@@ -37,7 +37,6 @@ final class MacsPaneModel: ObservableObject {
     /// Opens the box editor on a layout or preset to draw.
     var onEdit: ((WindowBoxDraft) -> Void)?
     /// Opens the first-time setup window again (the dropdown's Setup button).
-    var onShowSetup: (() -> Void)?
 
     init(store: MacsPaneConfigStore) {
         self.store = store
@@ -70,15 +69,20 @@ final class MacsPaneModel: ObservableObject {
             self?.config = config
             self?.fileIssues = store.issues
             self?.notch.apply(config)
-            self?.shortcuts.register(config.activeShortcuts)
+            self?.registerShortcuts()
         }
     }
 
     func start() {
         recents.start()
         notch.start()
-        shortcuts.register(config.activeShortcuts)
+        registerShortcuts()
         watchFile()
+    }
+
+    /// The shortcuts that are on, while MacsPane is: its main switch stops them with the drag.
+    private func registerShortcuts() {
+        shortcuts.register(config.snap.enabled ? config.activeShortcuts : [])
     }
 
     func stop() {
@@ -120,6 +124,7 @@ final class MacsPaneModel: ObservableObject {
 
     // MARK: - Switches
 
+    /// MacsPane's main switch: off, neither the drag to the notch nor its shortcuts do anything.
     func setSnapping(_ on: Bool) {
         store.update { $0.snap.enabled = on }
         if on, !isAuthorized { requestAccess() }
@@ -189,6 +194,9 @@ final class MacsPaneModel: ObservableObject {
     }
 
     // MARK: - Shortcuts
+
+    /// Opens a page of the dropdown over MacsPane's (the "New shortcut" page); set by the feature.
+    var onOpenPage: ((String) -> Void)?
 
     /// A shortcut was pressed, in whatever app.
     func run(_ action: ShortcutAction) {

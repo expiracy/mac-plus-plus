@@ -14,6 +14,8 @@ struct MacsPaneLayoutGlyph: View {
     var icons: [NSImage?] = []
     /// The box to pick out, by index into `boxes`.
     var highlighted: Int?
+    /// The most an app's icon is drawn at, before it blurs.
+    var largestIcon: CGFloat = .infinity
 
     /// Below this an icon is a smudge, so the box stays plain.
     private static let smallestIcon: CGFloat = 6
@@ -35,7 +37,7 @@ struct MacsPaneLayoutGlyph: View {
                 let fill = highlighted == nil ? 0.3 : highlighted == index ? 0.85 : 0.1
                 context.fill(Path(rect), with: .color(.accentColor.opacity(fill)))
                 context.stroke(Path(rect), with: .color(.accentColor), lineWidth: line)
-                let side = (min(rect.width, rect.height) * 0.8).rounded()
+                let side = min(largestIcon, (min(rect.width, rect.height) * 0.8).rounded())
                 if icons.indices.contains(index), let icon = icons[index], side >= Self.smallestIcon {
                     context.draw(Image(nsImage: icon),
                                  in: CGRect(x: rect.midX - side / 2, y: rect.midY - side / 2, width: side, height: side))
