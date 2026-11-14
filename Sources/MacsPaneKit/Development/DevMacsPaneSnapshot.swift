@@ -106,6 +106,10 @@ enum DevMacsPaneSnapshot {
             ("menu-new-preset", menuWindow(page(newPreset), dark: false)),
             ("menu-new-layout-dark", menuWindow(page(newLayout), dark: true)),
             ("undo-activity", menuWindow(undoActivity(model), dark: true)),
+            // New Shortcut: its layouts strip runs wider than the page, so it scrolls sideways.
+            ("new-shortcut", menuWindow(newShortcut(model), dark: false)),
+            ("new-shortcut-dark", menuWindow(newShortcut(model), dark: true)),
+            ("new-shortcut-preset", menuWindow(newShortcut(model, preset: true), dark: true)),
             ("grant", menuWindow(PermissionDropdownView(
                 grant: .accessibility, appName: "mac++",
                 appURL: URL(fileURLWithPath: "/Applications/mac++.app"),
@@ -297,6 +301,16 @@ enum DevMacsPaneSnapshot {
         return [ResolvedDragSuggestion(pairing: pair, icons: [icon("Notes"), icon("Mail")], appNames: ["Notes", "Mail"]),
                 ResolvedDragSuggestion(pairing: trio, icons: [icon("Notes"), icon("Mail"), icon("Calendar")],
                                        appNames: ["Notes", "Mail", "Calendar"])]
+    }
+
+    /// The New Shortcut page at the dropdown's width, on its background.
+    /// With `preset`, the first preset picked rather than the first layout.
+    @MainActor private static func newShortcut(_ model: MacsPaneModel, preset: Bool = false) -> some View {
+        let page = NewShortcutModel(app: model)
+        if preset, let first = model.config.presets.first { page.show(.preset(first.id)) }
+        return NewShortcutView(model: page)
+            .frame(width: 384)
+            .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color(nsColor: .windowBackgroundColor)))
     }
 
     /// A page of the dropdown at the dropdown's width, on its background.
