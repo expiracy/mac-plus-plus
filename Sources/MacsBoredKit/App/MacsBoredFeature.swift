@@ -36,6 +36,11 @@ public final class MacsBoredFeature {
         return (outcome.output, outcome.status)
     }
 
+    /// The developer render (`--snapshot-macsbored <dir>`). True when it ran and the process should end.
+    @MainActor public static func runDevCommand(arguments: [String]) -> Bool {
+        DevMacsBoredSnapshot.runIfRequested(arguments: arguments)
+    }
+
     /// The menu-bar icon while shortcuts are being handed to an app: MacsBored's filled ⌘ key.
     public static func passingImage() -> NSImage? { MenuBarGlyph.image(.passing) }
 
@@ -59,10 +64,6 @@ public final class MacsBoredFeature {
         menu.onSetup = { [weak self, weak menu] in
             menu?.onClose()
             self?.showSetup()
-        }
-        menu.onNew = { [weak model, weak menu] in
-            menu?.onClose()
-            model?.newEntry()
         }
         setup.onClose = { [weak self] in self?.onSetupClosed?() }
     }

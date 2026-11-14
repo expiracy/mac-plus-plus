@@ -34,9 +34,9 @@ app and macOS has them back. Alongside that it runs your own shortcuts, BetterTo
   remapped with `hidutil` for this login session and put back when you switch it off or quit; if another
   tool already remaps keys, it stays off.
 
-There is no separate Settings window: it is all in the menu. *New* opens the editor, whose tabs pick
-what you're making (Remap Keys, Open, Run Shortcut, Passthrough), and the pencil on a row opens it on
-that entry. The menu's Setup button opens setup again.
+There is no separate Settings window: it is all in the menu. *New passthrough app* and *New trigger*, at
+the foot of their lists, open the editor, whose tabs pick what you're making (Remap Keys, Open, Run
+Shortcut, Passthrough), and the pencil on a row opens it on that entry. The menu's Setup button opens setup again.
 
 ## The settings file
 

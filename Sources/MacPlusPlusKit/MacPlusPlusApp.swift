@@ -15,6 +15,7 @@ import MacsShared
 ///                            MacsBored's editor on a new entry on that tab.
 ///   --snapshot-menu <dir>    Write the dropdown's pages as PNGs, then quit.
 ///   --snapshot-macspane, --snapshot-notch-open, --export-icon   MacsPane's developer renders.
+///   --snapshot-macsbored <dir>   MacsBored's editor tabs and setup steps as PNGs.
 public enum MacPlusPlusApp {
     public static func run(arguments: [String] = CommandLine.arguments) {
         if let outcome = MacsBoredFeature.runCommand(arguments: arguments) {
@@ -22,6 +23,7 @@ public enum MacPlusPlusApp {
             exit(outcome.status)
         }
         if MainActor.assumeIsolated({ MacsPaneFeature.runDevCommand(arguments: arguments) }) { return }
+        if MainActor.assumeIsolated({ MacsBoredFeature.runDevCommand(arguments: arguments) }) { return }
         let app = NSApplication.shared
         // `NSApplication.delegate` is weak; `run()` never returns, so this frame keeps it alive.
         let delegate = MainActor.assumeIsolated { MacPlusPlusAppDelegate() }

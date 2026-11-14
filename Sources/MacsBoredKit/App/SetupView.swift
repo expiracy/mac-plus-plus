@@ -227,7 +227,7 @@ struct SetupView: View {
                     explainer("keyboard", "Give a key a job with a trigger",
                               "Remap keys, open an app, a link or a file, run a Shortcut, or pass just some keys to the app in front.")
                     explainer("menubar.rectangle", "Everything else is in the menu bar",
-                              "Pausing, New, and Setup live under the MacsBored icon.")
+                              "Pausing, new triggers and passthrough apps, and Setup live under the mac++ icon.")
                     explainer("doc.text", "Or set it all up from a file",
                               "Every setting is in one JSON file that MacsBored reloads the moment it changes, so you, a script or an AI agent can edit it.")
                 }
@@ -271,37 +271,43 @@ struct SetupView: View {
             Text(picked.count == 1 ? "1 app gets the shortcuts" : "\(picked.count) apps get the shortcuts")
                 .font(.callout).foregroundStyle(.secondary)
             if installed.isEmpty {
-                Text("No remote-desktop app is installed yet. Add one later with New in the menu bar.")
+                Text("No remote-desktop app is installed yet. Add one later with New passthrough app in the menu bar.")
                     .font(.callout).foregroundStyle(.secondary)
             }
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 14)], spacing: 14) {
                 ForEach(installed) { app in appCard(app, on: picked.contains(app.bundleID)) }
             }
+            Text("Also").font(.callout).foregroundStyle(.secondary)
+                .padding(.top, 14)
+            SetupCard(padding: 0) {
+                VStack(spacing: 0) {
+                    settingRow("power", "Open at login", "MacsBored starts with your Mac, so passthrough is always ready.") {
+                        Toggle("Open MacsBored at login", isOn: Binding(get: { model.openAtLogin }, set: { model.setOpenAtLogin($0) }))
+                    }
+                    Divider().padding(.leading, 46)
+                    settingRow("capslock", "Caps Lock as Hyper", "Caps Lock holds ⌃⌥⇧⌘, a modifier no app uses, for triggers of your own.") {
+                        Toggle("Caps Lock as Hyper", isOn: Binding(get: { model.config.hyperKeyEnabled }, set: { model.setHyperKey($0) }))
+                    }
+                }
+            }
             Spacer(minLength: 0)
-            settingCard("power", "Open at login", "MacsBored starts with your Mac, so passthrough is always ready.") {
-                Toggle("Open MacsBored at login", isOn: Binding(get: { model.openAtLogin }, set: { model.setOpenAtLogin($0) }))
-            }
-            settingCard("capslock", "Caps Lock as Hyper", "Caps Lock holds ⌃⌥⇧⌘, a modifier no app uses, for triggers of your own.") {
-                Toggle("Caps Lock as Hyper", isOn: Binding(get: { model.config.hyperKeyEnabled }, set: { model.setHyperKey($0) }))
-            }
         }
-        .padding(.bottom, 16)
     }
 
     /// A setting on a setup step, drawn the same as MacsPane's: its icon, name and line, and its switch.
-    private func settingCard<Control: View>(_ symbol: String, _ title: String, _ detail: String,
-                                            @ViewBuilder control: () -> Control) -> some View {
-        SetupCard(padding: 10) {
-            HStack(spacing: 10) {
-                IconTile(symbol: symbol, tint: .secondary, size: 24)
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(title).font(.callout.weight(.semibold))
-                    Text(detail).font(.caption).foregroundStyle(.secondary)
-                }
-                Spacer()
-                control().toggleStyle(.switch).controlSize(.small).labelsHidden()
+    private func settingRow<Control: View>(_ symbol: String, _ title: String, _ detail: String,
+                                           @ViewBuilder control: () -> Control) -> some View {
+        HStack(spacing: 12) {
+            IconTile(symbol: symbol, tint: .secondary, size: 24)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(title).font(.callout.weight(.semibold))
+                Text(detail).font(.caption).foregroundStyle(.secondary)
             }
+            Spacer()
+            control().toggleStyle(.switch).controlSize(.small).labelsHidden()
         }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 10)
     }
 
     private func appCard(_ app: AppRef, on: Bool) -> some View {
@@ -769,7 +775,7 @@ private struct TriggerLesson: View {
     }
 
     private var status: String {
-        if done.count == Sample.allCases.count { return "That's triggers. Make your own with New in the menu bar." }
+        if done.count == Sample.allCases.count { return "That's triggers. Make your own with New trigger in the menu bar." }
         switch shown {
         case .notes?: return "Notes opened. If it was already open, the trigger brings it to the front."
         case .focus?: return "Your “Focus timer” Shortcut ran, from one key."

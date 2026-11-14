@@ -4,7 +4,8 @@ import MacsBoredCore
 
 /// The MacsBored dropdown, built like MacsPane's: the main switch beside the name; a "Now" box
 /// saying what the app in front gets and the one thing to do about it; any warning with its fix; the
-/// general switches; then the passthrough apps and your triggers, each with a pencil, a bin and its switch.
+/// general switches; then the passthrough apps and your triggers, each with a pencil, a bin and its
+/// switch, and a "New …" row at the foot of each list.
 @MainActor
 enum MacsBoredMenu {
     static let name = "MacsBored"
@@ -129,8 +130,11 @@ enum MacsBoredMenu {
             row.appIcon = profile.apps.first.flatMap { AppIcons.icon(bundleID: $0.bundleID) }
             return row
         }
-        return StatusMenuGroup(title: "Passthrough apps", rows: rows,
-                               empty: "None yet. Click New to give Windows App, Citrix Viewer or a virtual machine macOS's shortcuts.")
+        let add = StatusMenuEntry.command("New passthrough app", symbol: "plus", key: "profile-new") { [weak model] in
+            model?.newPassthroughApp()
+        }
+        return StatusMenuGroup(title: "Passthrough apps", rows: rows, actions: [add],
+                               empty: "None yet. Windows App, Citrix Viewer or a virtual machine can have macOS's shortcuts.")
     }
 
     private static func triggerGroup(_ model: MacsBoredModel) -> StatusMenuGroup {
@@ -146,8 +150,11 @@ enum MacsBoredMenu {
                 : "\(trigger.keys[0].displayName) +\(trigger.keys.count - 1)"
             return row
         }
-        return StatusMenuGroup(title: "Triggers", rows: rows,
-                               empty: "None yet. Click New to make one: remap keys, open something or run a Shortcut.")
+        let add = StatusMenuEntry.command("New trigger", symbol: "plus", key: "trigger-new") { [weak model] in
+            model?.newEntry()
+        }
+        return StatusMenuGroup(title: "Triggers", rows: rows, actions: [add],
+                               empty: "None yet. A trigger remaps keys, opens something or runs a Shortcut.")
     }
 }
 

@@ -315,15 +315,29 @@ struct AppChips: View {
     }
 }
 
-/// Only-if and unless conditions, any number, combined by all or any.
+/// Only-if and unless conditions, any number, combined by all or any. With none, one row says when
+/// it works instead; Add Condition always sits at the end of the last row.
 struct ConditionRows: View {
     @Binding var conditions: ConditionSet
+    /// What the one row says while there are no conditions ("Always").
+    var empty: String
 
     var body: some View {
         ForEach(Array(conditions.conditions.enumerated()), id: \.element.id) { index, condition in
             FormRow(divider: index > 0) { row(index: index, condition: condition) }
         }
         FormRow(divider: !conditions.conditions.isEmpty) {
+            if conditions.conditions.isEmpty {
+                Text(empty).foregroundStyle(.secondary)
+            } else if conditions.conditions.count > 1 {
+                Text("Match").foregroundStyle(.secondary)
+                Picker("Match", selection: $conditions.match) {
+                    Text("All").tag(ConditionMatch.all)
+                    Text("Any").tag(ConditionMatch.any)
+                }
+                .pickerStyle(.segmented).labelsHidden().fixedSize()
+            }
+            Spacer()
             Menu {
                 ForEach(Array(Condition.Kind.templates.enumerated()), id: \.offset) { _, kind in
                     Button { conditions.conditions.append(Condition(kind)) } label: { Label(kind.title, systemImage: kind.symbol) }
@@ -332,15 +346,6 @@ struct ConditionRows: View {
                 Label("Add Condition", systemImage: "plus")
             }
             .fixedSize()
-            Spacer()
-            if conditions.conditions.count > 1 {
-                Text("Match").font(.caption).foregroundStyle(.secondary)
-                Picker("Match", selection: $conditions.match) {
-                    Text("All").tag(ConditionMatch.all)
-                    Text("Any").tag(ConditionMatch.any)
-                }
-                .pickerStyle(.segmented).labelsHidden().fixedSize()
-            }
         }
     }
 

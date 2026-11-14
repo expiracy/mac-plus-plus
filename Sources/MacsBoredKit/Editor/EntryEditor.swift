@@ -43,13 +43,8 @@ struct EntryEditor: View {
                     if [.remap, .open, .shortcut].contains(draft.tab) { whatItDoes }
                     if draft.isPassthroughApp { passthroughApp } else { whereGroup }
                     FormGroup(title: "When", caption: draft.isPassthroughApp ? pauseNote : "With no conditions it always works.") {
-                        if draft.conditions.conditions.isEmpty {
-                            FormRow(divider: false) {
-                                Text(draft.isPassthroughApp ? "Whenever one of these apps is in front" : "Always")
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                        ConditionRows(conditions: $draft.conditions)
+                        ConditionRows(conditions: $draft.conditions,
+                                      empty: draft.isPassthroughApp ? "Whenever one of these apps is in front" : "Always")
                     }
                 }
                 .padding(.horizontal, 20)
@@ -142,7 +137,8 @@ struct EntryEditor: View {
     // MARK: - Name and keys
 
     private var identity: some View {
-        FormGroup {
+        FormGroup(caption: draft.isPassthroughApp
+                  ? "The app that shows the other computer: Windows App, Citrix Viewer or a virtual machine." : nil) {
             if draft.tab == .passthrough {
                 FormRow(label: "Pass through", divider: false) {
                     Picker("Pass through", selection: $draft.passMode) {
@@ -163,7 +159,13 @@ struct EntryEditor: View {
                     Toggle("On", isOn: $draft.isEnabled).toggleStyle(.switch).controlSize(.small).labelsHidden()
                 }
             }
-            if !draft.isPassthroughApp {
+            if draft.isPassthroughApp {
+                FormRow(label: "Apps", top: true) {
+                    AppChips(apps: $draft.apps, suggestions: KnownPassthroughApps.all.filter {
+                        NSWorkspace.shared.urlForApplication(withBundleIdentifier: $0.bundleID) != nil
+                    })
+                }
+            } else {
                 FormRow(label: draft.tab == .passthrough ? "Keys to pass" : "Keys", top: true) { keysControl }
             }
         }
@@ -205,6 +207,7 @@ struct EntryEditor: View {
                     }
                 }
                 .controlSize(.small)
+                .frame(minHeight: 28)
             }
             keysHint
         }
@@ -474,13 +477,6 @@ struct EntryEditor: View {
     }
 
     @ViewBuilder private var passthroughApp: some View {
-        FormGroup(title: "Apps", caption: "The app that shows the other computer: Windows App, Citrix Viewer or a virtual machine.") {
-            FormRow(label: "Apps", top: true, divider: false) {
-                AppChips(apps: $draft.apps, suggestions: KnownPassthroughApps.all.filter {
-                    NSWorkspace.shared.urlForApplication(withBundleIdentifier: $0.bundleID) != nil
-                })
-            }
-        }
         let all = Set(SystemShortcutGroup.allCases)
         FormGroup(title: "macOS shortcuts sent to the app",
                   caption: "\(draft.systemShortcuts.count) of \(all.count) selected. While the app is in front, these keys reach it instead of macOS.",

@@ -66,6 +66,7 @@ The executable also takes these, for scripts, agents and looking at a change:
 | `--open-editor remap\|open\|shortcut\|passthrough` | Open MacsBored's editor on a new entry. |
 | `--snapshot-menu <dir>` | Write the dropdown's pages, light and dark, as PNGs, then quit. |
 | `--snapshot-macspane <dir>` | Write MacsPane's other surfaces as PNGs, then quit. |
+| `--snapshot-macsbored <dir>` | Write MacsBored's editor tabs and setup steps as PNGs, then quit. |
 
 ### Releasing
 
