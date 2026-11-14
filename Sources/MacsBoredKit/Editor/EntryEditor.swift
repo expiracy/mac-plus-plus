@@ -380,7 +380,7 @@ struct EntryEditor: View {
                         ForEach(shortcutChoices, id: \.self) { Text($0).tag($0) }
                     }
                     .labelsHidden()
-                    .frame(width: FormMetric.field)
+                    .fixedSize()
                     Button("Open Shortcuts") { NSWorkspace.shared.open(URL(fileURLWithPath: "/System/Applications/Shortcuts.app")) }
                     Spacer()
                 }
