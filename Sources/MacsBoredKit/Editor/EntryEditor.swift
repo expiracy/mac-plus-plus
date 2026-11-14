@@ -23,6 +23,8 @@ struct EntryEditor: View {
     @State private var showsFile = false
     @State private var copied = false
     @State private var confirmingDelete = false
+    /// A passthrough app's shortcut list and key handling, folded away: most people keep the defaults.
+    @State private var showsAdvanced = false
     @State private var shortcutNames: [String] = []
     /// The form's own height, so the window fits it and only scrolls past `maxFormHeight`.
     @State private var formHeight: CGFloat = 400
@@ -41,11 +43,12 @@ struct EntryEditor: View {
                         .padding(.horizontal, 10)
                     identity
                     if [.remap, .open, .shortcut].contains(draft.tab) { whatItDoes }
-                    if draft.isPassthroughApp { passthroughApp } else { whereGroup }
-                    FormGroup(title: "When", caption: draft.isPassthroughApp ? pauseNote : "With no conditions it always works.") {
+                    if !draft.isPassthroughApp { whereGroup }
+                    FormGroup(title: "When", caption: draft.isPassthroughApp ? pauseNote : nil) {
                         ConditionRows(conditions: $draft.conditions,
                                       empty: draft.isPassthroughApp ? "Whenever one of these apps is in front" : "Always")
                     }
+                    if draft.isPassthroughApp { passthroughAdvanced }
                 }
                 .padding(.horizontal, 20)
                 .padding(.vertical, 16)
@@ -474,6 +477,35 @@ struct EntryEditor: View {
         NSWorkspace.shared.runningApplications
             .filter { $0.activationPolicy == .regular && $0.bundleIdentifier != Bundle.main.bundleIdentifier }
             .compactMap { app in app.bundleIdentifier.map { AppRef(bundleID: $0, name: app.localizedName ?? $0) } }
+    }
+
+    /// "Advanced", with what it holds in one line, opening on the shortcut list and the key handling.
+    @ViewBuilder private var passthroughAdvanced: some View {
+        Button { withAnimation(.snappy(duration: 0.2)) { showsAdvanced.toggle() } } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 10, weight: .semibold))
+                    .rotationEffect(.degrees(showsAdvanced ? 90 : 0))
+                Text("Advanced").font(.caption.weight(.semibold))
+                Text(advancedSummary).font(.caption).lineLimit(1)
+                Spacer(minLength: 0)
+            }
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 10)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(showsAdvanced ? "Hide advanced settings" : "Show advanced settings")
+        if showsAdvanced { passthroughApp }
+    }
+
+    private var advancedSummary: String {
+        let all = SystemShortcutGroup.allCases.count
+        let count = draft.systemShortcuts.count
+        var parts = [count == all ? "All \(all) macOS shortcuts go to the app" : "\(count) of \(all) macOS shortcuts go to the app"]
+        if draft.captureAllKeys { parts.append("every key sent straight to it") }
+        if draft.modifierLayout != .asIs { parts.append(draft.modifierLayout.title) }
+        return parts.joined(separator: " · ")
     }
 
     @ViewBuilder private var passthroughApp: some View {

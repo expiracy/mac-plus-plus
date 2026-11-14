@@ -277,19 +277,12 @@ struct SetupView: View {
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 14)], spacing: 14) {
                 ForEach(installed) { app in appCard(app, on: picked.contains(app.bundleID)) }
             }
-            Text("Also").font(.callout).foregroundStyle(.secondary)
-                .padding(.top, 14)
             SetupCard(padding: 0) {
-                VStack(spacing: 0) {
-                    settingRow("power", "Open at login", "MacsBored starts with your Mac, so passthrough is always ready.") {
-                        Toggle("Open MacsBored at login", isOn: Binding(get: { model.openAtLogin }, set: { model.setOpenAtLogin($0) }))
-                    }
-                    Divider().padding(.leading, 46)
-                    settingRow("capslock", "Caps Lock as Hyper", "Caps Lock holds ⌃⌥⇧⌘, a modifier no app uses, for triggers of your own.") {
-                        Toggle("Caps Lock as Hyper", isOn: Binding(get: { model.config.hyperKeyEnabled }, set: { model.setHyperKey($0) }))
-                    }
+                settingRow("power", "Open at login", "MacsBored starts with your Mac, so passthrough is always ready.") {
+                    Toggle("Open MacsBored at login", isOn: Binding(get: { model.openAtLogin }, set: { model.setOpenAtLogin($0) }))
                 }
             }
+            .padding(.top, 14)
             Spacer(minLength: 0)
         }
     }

@@ -7,7 +7,8 @@ import MacsShared
 /// mac++: one menu-bar app holding MacsPane (windows) and MacsBored (keys), each a page of one
 /// dropdown. One boot path, shared by `swift run mac-plus-plus` and the bundled app.
 ///
-///   macsbored path | check [file] | schema   MacsBored's config file, for scripts and agents.
+///   macspane path | check [file] | schema    MacsPane's settings file, for scripts and agents.
+///   macsbored path | check [file] | schema   MacsBored's settings file, for scripts and agents.
 ///   --smoke-test             Boot, then quit after ~1.5 s: a launch check.
 ///   --open-menu [macspane|macsbored]   Open the dropdown once launched, on that page.
 ///   --open-setup macspane|macsbored    Open that app's first-time setup.
@@ -18,7 +19,8 @@ import MacsShared
 ///   --snapshot-macsbored <dir>   MacsBored's editor tabs and setup steps as PNGs.
 public enum MacPlusPlusApp {
     public static func run(arguments: [String] = CommandLine.arguments) {
-        if let outcome = MacsBoredFeature.runCommand(arguments: arguments) {
+        if let outcome = MacsBoredFeature.runCommand(arguments: arguments)
+            ?? MacsPaneFeature.runCommand(arguments: arguments) {
             FileHandle.standardOutput.write(Data((outcome.output + "\n").utf8))
             exit(outcome.status)
         }

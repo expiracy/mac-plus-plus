@@ -21,6 +21,10 @@ final class MacsPaneModel: ObservableObject {
     @Published private(set) var lastAction: LastAction?
     /// How many windows the notch has snapped since launch, so setup can tell a real drag worked.
     @Published private(set) var windowSnaps = 0
+    /// What's wrong with `config.json` as it is on disk.
+    @Published private(set) var fileIssues: [MacsPaneConfigFile.Issue]
+    /// Watches config.json's folder, so an edit made by hand, a script or an agent applies straight away.
+    private var watcher: DispatchSourceFileSystemObject?
 
     let notch: MacsPaneNotchController
     private let store: MacsPaneConfigStore
@@ -38,6 +42,7 @@ final class MacsPaneModel: ObservableObject {
     init(store: MacsPaneConfigStore) {
         self.store = store
         self.config = store.config
+        self.fileIssues = store.issues
         let recents = RecentWindowsService()
         self.recents = recents
         self.notch = MacsPaneNotchController(config: store.config, recents: recents)
@@ -63,6 +68,7 @@ final class MacsPaneModel: ObservableObject {
         shortcuts.onPress = { [weak self] action in self?.run(action) }
         store.onChange = { [weak self] config in
             self?.config = config
+            self?.fileIssues = store.issues
             self?.notch.apply(config)
             self?.shortcuts.register(config.activeShortcuts)
         }
@@ -72,13 +78,41 @@ final class MacsPaneModel: ObservableObject {
         recents.start()
         notch.start()
         shortcuts.register(config.activeShortcuts)
+        watchFile()
     }
 
     func stop() {
+        watcher?.cancel()
+        watcher = nil
         shortcuts.register([])
         notch.stop()
         recents.stop()
     }
+
+    // MARK: - The settings file
+
+    private func watchFile() {
+        let descriptor = open(store.url.deletingLastPathComponent().path, O_EVTONLY)
+        guard descriptor >= 0 else { return }
+        let source = DispatchSource.makeFileSystemObjectSource(fileDescriptor: descriptor, eventMask: [.write, .rename],
+                                                               queue: .main)
+        source.setEventHandler { [weak self] in self?.reloadFromDisk() }
+        source.setCancelHandler { close(descriptor) }
+        source.resume()
+        watcher = source
+    }
+
+    /// Takes in an edit made outside the app (`store.onChange` applies the settings).
+    func reloadFromDisk() {
+        guard store.reload() else { return }
+        fileIssues = store.issues
+    }
+
+    var fileErrors: [MacsPaneConfigFile.Issue] { fileIssues.filter { !$0.isWarning } }
+
+    func openConfigFile() { NSWorkspace.shared.open(store.url) }
+
+    func revealConfigFile() { NSWorkspace.shared.activateFileViewerSelecting([store.url]) }
 
     // MARK: - State the menu reads
 

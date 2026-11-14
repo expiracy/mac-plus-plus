@@ -30,6 +30,18 @@ public final class MacsPaneFeature {
     /// The menu-bar icon mac++ wears: MacsPane's mark, as a template image.
     public static func menuBarImage() -> NSImage { MacsPaneGlyph.templateImage() }
 
+    /// The settings file's commands for scripts and agents, answered before the app starts:
+    /// `macspane path`, `macspane check [file]`, `macspane schema` (after the program's own path).
+    /// Nil when `arguments` are the app's own.
+    public nonisolated static func runCommand(arguments: [String]) -> (output: String, status: Int32)? {
+        let rest = Array(arguments.dropFirst())
+        guard rest.first == "macspane" else { return nil }
+        let url = (try? MacsPanePaths.configURL())
+            ?? FileManager.default.temporaryDirectory.appendingPathComponent("macspane-config.json")
+        return MacsPaneConfigCommand.run(Array(rest.dropFirst()), defaultURL: url)
+            ?? ("usage: macspane path | check [file] | schema", 64)
+    }
+
     /// The developer commands answered before the app starts (`--snapshot-macspane`,
     /// `--snapshot-notch-open`, `--export-icon`). True when one ran and the process should end.
     @MainActor public static func runDevCommand(arguments: [String]) -> Bool {
