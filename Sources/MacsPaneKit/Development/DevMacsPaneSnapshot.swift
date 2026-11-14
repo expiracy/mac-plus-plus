@@ -1,4 +1,5 @@
 #if canImport(AppKit)
+import MacsShared
 import AppKit
 import SwiftUI
 import MacsPaneCore
@@ -62,54 +63,56 @@ enum DevMacsPaneSnapshot {
         host.screenWidth = 1512
         host.dwellMs = 0
 
-        let busy = StatusMenuModel(brand: MacsPaneMenu.brand) { busyContent(model) }
-        let quiet = StatusMenuModel(brand: MacsPaneMenu.brand) { quietContent(model) }
+        let busy = MenuPageModel(brand: MacsPaneMenu.brand) { busyContent(model) }
+        let quiet = MenuPageModel(brand: MacsPaneMenu.brand) { quietContent(model) }
         // The first preset's trash clicked once: it asks before deleting.
-        let asking = StatusMenuModel(brand: MacsPaneMenu.brand) { busyContent(model) }
+        let asking = MenuPageModel(brand: MacsPaneMenu.brand) { busyContent(model) }
         asking.confirmingTrash = model.config.presets.first.map { "preset-\($0.id)" }
         // The last preset just saved from the desktop, its name being typed in place.
-        let naming = StatusMenuModel(brand: MacsPaneMenu.brand) {
+        let naming = MenuPageModel(brand: MacsPaneMenu.brand) {
             var content = busyContent(model)
             content.renaming = model.config.presets.last.map { "preset-\($0.id)" }
             return content
         }
         // New preset and New layout clicked: each one's choices hang under it.
-        let newPreset = StatusMenuModel(brand: MacsPaneMenu.brand) { busyContent(model) }
+        let newPreset = MenuPageModel(brand: MacsPaneMenu.brand) { busyContent(model) }
         newPreset.openSubmenu = "preset-new"
-        let newLayout = StatusMenuModel(brand: MacsPaneMenu.brand) { busyContent(model) }
+        let newLayout = MenuPageModel(brand: MacsPaneMenu.brand) { busyContent(model) }
         newLayout.openSubmenu = "layout-new"
+        // MacsPane's lessons in the onboarding window, alone.
         let setupShots: [(String, NSWindow)] = [false, true].flatMap { dark in
-            MacsPaneSetupModel.Step.allCases.map { step in
-                let setup = MacsPaneSetupModel(app: model)
-                setup.step = step
+            MacsPaneOnboarding.Step.allCases.map { step in
+                let lessons = OnboardingModel(parts: [MacsPaneOnboarding(app: model)])
+                lessons.current = step.rawValue
                 // Offscreen the window is never key; draw the controls as the front window shows them.
-                let root = MacsPaneSetupView(model: setup).environment(\.controlActiveState, .key)
+                let root = OnboardingView(model: lessons).environment(\.controlActiveState, .key)
                 return ("setup-\(step)\(dark ? "-dark" : "")",
-                        window(NSHostingView(rootView: root), size: SetupShell<EmptyView>.size, dark: dark))
+                        window(NSHostingView(rootView: root), size: OnboardingView.size, dark: dark))
             }
         }
         // The practice notch open, a preset aimed at.
-        let practice = MacsPaneSetupModel(app: model)
-        practice.step = .drag
+        let practice = MacsPaneOnboarding(app: model)
         practice.previewPicker = true
-        let practiceShot = ("setup-drag-open", window(NSHostingView(rootView: MacsPaneSetupView(model: practice)
-            .environment(\.controlActiveState, .key)), size: SetupShell<EmptyView>.size, dark: false))
+        let practiceLessons = OnboardingModel(parts: [practice])
+        practiceLessons.current = MacsPaneOnboarding.Step.drag.rawValue
+        let practiceShot = ("setup-drag-open", window(NSHostingView(rootView: OnboardingView(model: practiceLessons)
+            .environment(\.controlActiveState, .key)), size: OnboardingView.size, dark: false))
         let windows: [(String, NSWindow)] = setupShots + editorShots(model) + [
-            ("menu-busy", menuWindow(StatusMenuView(model: busy), dark: false)),
-            ("menu-busy-dark", menuWindow(StatusMenuView(model: busy), dark: true)),
-            ("menu-quiet", menuWindow(StatusMenuView(model: quiet), dark: false)),
-            ("menu-delete", menuWindow(StatusMenuView(model: asking), dark: false)),
-            ("menu-rename", menuWindow(StatusMenuView(model: naming), dark: false)),
-            ("menu-new-preset", menuWindow(StatusMenuView(model: newPreset), dark: false)),
-            ("menu-new-layout-dark", menuWindow(StatusMenuView(model: newLayout), dark: true)),
+            ("menu-busy", menuWindow(page(busy), dark: false)),
+            ("menu-busy-dark", menuWindow(page(busy), dark: true)),
+            ("menu-quiet", menuWindow(page(quiet), dark: false)),
+            ("menu-delete", menuWindow(page(asking), dark: false)),
+            ("menu-rename", menuWindow(page(naming), dark: false)),
+            ("menu-new-preset", menuWindow(page(newPreset), dark: false)),
+            ("menu-new-layout-dark", menuWindow(page(newLayout), dark: true)),
             ("undo-activity", menuWindow(undoActivity(model), dark: true)),
             ("grant", menuWindow(PermissionDropdownView(
-                grant: .accessibility, appName: "MacsPane",
-                appURL: URL(fileURLWithPath: "/Applications/MacsPane.app"),
+                grant: .accessibility, appName: "mac++",
+                appURL: URL(fileURLWithPath: "/Applications/mac++.app"),
                 model: PermissionGrantModel(grant: .accessibility, isGranted: { false }, prompt: nil)), dark: false)),
             ("grant-done", menuWindow(PermissionDropdownView(
-                grant: .accessibility, appName: "MacsPane",
-                appURL: URL(fileURLWithPath: "/Applications/MacsPane.app"),
+                grant: .accessibility, appName: "mac++",
+                appURL: URL(fileURLWithPath: "/Applications/mac++.app"),
                 model: PermissionGrantModel(grant: .accessibility, isGranted: { true }, prompt: nil)), dark: true)),
         ]
         // The two notch shots show one live host at two moments, so each is written when it is taken.
@@ -213,26 +216,6 @@ enum DevMacsPaneSnapshot {
         }
     }
 
-    /// `macspane --export-icon <dir>`: the app icon's faces (1024 px) and marks layer from the drawing
-    /// code, for `scripts/dev/make_macspane_icon.sh`.
-    @MainActor static func exportIconIfRequested(arguments: [String]) -> Bool {
-        guard let flag = arguments.firstIndex(of: "--export-icon"), flag + 1 < arguments.count else { return false }
-        let directory = URL(fileURLWithPath: arguments[flag + 1], isDirectory: true)
-        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        func write<V: View>(_ view: V, _ name: String, scale: CGFloat = 1) {
-            let renderer = ImageRenderer(content: view)
-            renderer.scale = scale
-            guard let tiff = renderer.nsImage?.tiffRepresentation, let rep = NSBitmapImageRep(data: tiff) else { return }
-            try? rep.representation(using: .png, properties: [:])?.write(to: directory.appendingPathComponent(name))
-        }
-        for (face, name) in [(ColorScheme.dark, "dark"), (.light, "light")] {
-            write(MacsPaneLogo(size: 1024, iconCanvas: true, face: face), "icon-1024-\(name).png")
-            write(MacsPaneLogo(size: 1024, face: face, marksOnly: true), "marks-\(name).png")
-        }
-        write(MacsPaneGlyph().frame(width: 18, height: 18).foregroundStyle(.black), "glyph-menu-bar@2x.png", scale: 2)
-        return true
-    }
-
     private static var seed: MacsPaneConfig {
         var config = MacsPaneConfig()
         let halves = WindowLayout.builtIns[0]
@@ -254,13 +237,13 @@ enum DevMacsPaneSnapshot {
     }
 
     /// The real dropdown, with the Accessibility warning in place of live state.
-    private static func busyContent(_ model: MacsPaneModel) -> StatusMenuContent {
+    private static func busyContent(_ model: MacsPaneModel) -> MenuPageContent {
         var content = MacsPaneMenu.content(model)
         content.warnings = [.warning("Snapping needs Accessibility", actionTitle: "Grant") {}]
         return content
     }
 
-    private static func quietContent(_ model: MacsPaneModel) -> StatusMenuContent {
+    private static func quietContent(_ model: MacsPaneModel) -> MenuPageContent {
         var content = MacsPaneMenu.content(model)
         content.warnings = []
         return content
@@ -314,6 +297,13 @@ enum DevMacsPaneSnapshot {
         return [ResolvedDragSuggestion(pairing: pair, icons: [icon("Notes"), icon("Mail")], appNames: ["Notes", "Mail"]),
                 ResolvedDragSuggestion(pairing: trio, icons: [icon("Notes"), icon("Mail"), icon("Calendar")],
                                        appNames: ["Notes", "Mail", "Calendar"])]
+    }
+
+    /// A page of the dropdown at the dropdown's width, on its background.
+    private static func page(_ model: MenuPageModel) -> some View {
+        MenuPageView(model: model)
+            .frame(width: 384)
+            .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color(nsColor: .windowBackgroundColor)))
     }
 
     /// The real dropdown sits on the menu material; offscreen, the window background stands in.

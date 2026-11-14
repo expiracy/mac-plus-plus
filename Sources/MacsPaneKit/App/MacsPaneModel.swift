@@ -33,7 +33,6 @@ final class MacsPaneModel: ObservableObject {
     /// Opens the box editor on a layout or preset to draw.
     var onEdit: ((WindowBoxDraft) -> Void)?
     /// Opens the first-time setup window again (the dropdown's Setup button).
-    var onShowSetup: (() -> Void)?
 
     init(store: MacsPaneConfigStore) {
         self.store = store

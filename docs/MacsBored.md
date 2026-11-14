@@ -15,7 +15,7 @@ app and macOS has them back. Alongside that it runs your own shortcuts, BetterTo
 - **Passthrough apps.** Each names the apps it covers, when it acts, and which of macOS's shortcuts go
   to the app instead: the app switcher, Spotlight, Mission Control, Spaces, screenshots, input sources,
   the Dock and Notification Centre, keyboard navigation, Zoom and Help search. The menu's *Now* box
-  offers to add the app in front; setup offers any remote-desktop app installed on first run.
+  offers to add the app in front; onboarding offers any remote-desktop app installed on first run.
 - **Conditions.** A passthrough or trigger can wait for any of these: the window is full screen, the
   window fills the screen, the window title contains some text, an external display is connected, the
   Mac is on battery, the time is between two times, or Caps Lock is on. Each can be turned round
@@ -34,9 +34,10 @@ app and macOS has them back. Alongside that it runs your own shortcuts, BetterTo
   remapped with `hidutil` for this login session and put back when you switch it off or quit; if another
   tool already remaps keys, it stays off.
 
-There is no separate Settings window: it is all in the menu. *New* opens the editor, whose tabs pick
-what you're making (Remap Keys, Open, Run Shortcut, Passthrough), and the pencil on a row opens it on
-that entry. The menu's Setup button opens setup again.
+Everything MacsBored lets you change is on its page of mac++'s menu. *New passthrough app* and *New
+trigger* (which asks: remap keys, open something, or run a Shortcut) open the editor, and the pencil on
+a row opens it on that entry. Open at login and Accessibility belong to the whole app, in mac++'s
+Settings. MacsBored's Help, the ? beside its name at the top of its page, explains each part and can play its lessons again.
 
 ## The settings file
 
@@ -93,7 +94,8 @@ macOS, so they stay with it.
 | Target | What it holds |
 |---|---|
 | `MacsBoredCore` | Pure logic with no AppKit: profiles, conditions, triggers, the passthrough plan, the key router, the hot-key ledger, the settings file and its schema, and the editor's draft. Unit-tested. |
-| `MacsBoredKit` | The app: the keyboard event tap (on its own thread), the system-shortcut switch, the Accessibility reads, MacsBored's page of the dropdown, the editors and setup. `MacsBoredFeature` is what mac++ starts. |
+| `MacsBoredKit` | The app: the keyboard event tap (on its own thread), the system-shortcut switch, the Accessibility reads, MacsBored's page of the dropdown, its lessons, its help text and the editor. `MacsBoredFeature` is what mac++ starts. |
 
-`mac-plus-plus --open-menu macsbored`, `--open-editor remap|open|shortcut|passthrough` and
-`--open-setup macsbored` open those surfaces straight away, for looking at them without clicking through.
+`mac-plus-plus --open-menu macsbored`, `--open-editor remap|open|shortcut|passthrough`,
+`--open-onboarding macsbored` and `--open-help macsbored` open those surfaces straight away, for looking at
+them without clicking through.

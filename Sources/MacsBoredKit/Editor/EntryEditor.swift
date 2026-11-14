@@ -1,4 +1,5 @@
 #if canImport(AppKit)
+import MacsShared
 import AppKit
 import SwiftUI
 import MacsBoredCore

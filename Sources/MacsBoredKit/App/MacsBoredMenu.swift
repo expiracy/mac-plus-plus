@@ -1,16 +1,20 @@
 #if canImport(AppKit)
+import MacsShared
 import AppKit
+import SwiftUI
 import MacsBoredCore
 
-/// The MacsBored dropdown, built like MacsPane's: the main switch beside the name; a "Now" box
-/// saying what the app in front gets and the one thing to do about it; any warning with its fix; the
-/// general switches; then the passthrough apps and your triggers, each with a pencil, a bin and its switch.
+/// MacsBored's page of mac++'s dropdown, drawn by the same view as MacsPane's: the main switch beside
+/// the name; a "Now" box saying what the app in front gets and the one thing to do about it; any
+/// warning with its fix; the general switches; then the passthrough apps and your triggers, each with
+/// a pencil, a bin and its switch, and a New row under each list. Accessibility and Open at login
+/// belong to the whole app (the dropdown's banner and Settings).
 @MainActor
 enum MacsBoredMenu {
-    static let name = "MacsBored"
+    static let brand = MenuPageBrand(name: "MacsBored", logo: { AnyView(MacsBoredLogo(size: $0)) })
 
-    static func content(_ model: MacsBoredModel) -> StatusMenuContent {
-        var content = StatusMenuContent()
+    static func content(_ model: MacsBoredModel) -> MenuPageContent {
+        var content = MenuPageContent()
         let config = model.config
         content.primary = .toggle("Pass shortcuts to remote apps", symbol: "command", isOn: config.passthroughEnabled,
                                   primary: true) { [weak model] in
@@ -35,10 +39,10 @@ enum MacsBoredMenu {
 
     // MARK: - Now
 
-    private static func now(_ model: MacsBoredModel) -> StatusMenuEntry {
+    private static func now(_ model: MacsBoredModel) -> MenuEntry {
         let context = model.context
         let appName = context.appName ?? "This app"
-        var entry: StatusMenuEntry
+        var entry: MenuEntry
         if model.plan.isActive {
             let count = model.systemShortcutsOff
             entry = .live(appName, symbol: "command", fact: count == 1 ? "1 macOS shortcut goes to it" : "\(count) macOS shortcuts go to it",
@@ -57,23 +61,22 @@ enum MacsBoredMenu {
         } else {
             entry = .live("Nothing to pass through", symbol: "command", fact: "Bring a remote desktop to the front", key: "now")
         }
-        if let bundleID = context.bundleID { entry.appIcon = AppIcons.icon(bundleID: bundleID) }
+        if let bundleID = context.bundleID, let icon = AppIcons.icon(bundleID: bundleID) { entry.leading = .appIcon(icon) }
         return entry
     }
 
     // MARK: - Warnings
 
-    private static func warnings(_ model: MacsBoredModel) -> [StatusMenuEntry] {
-        var warnings: [StatusMenuEntry] = []
+    private static func warnings(_ model: MacsBoredModel) -> [MenuEntry] {
+        var warnings: [MenuEntry] = []
         if let issue = model.fileErrors.first {
             let line = issue.line.map { "config.json line \($0) isn't valid" } ?? "config.json isn't valid"
-            var row = StatusMenuEntry.warning(line, actionTitle: "Show") { [weak model] in model?.openConfigFile() }
+            var row = MenuEntry.warning(line, actionTitle: "Show") { [weak model] in model?.openConfigFile() }
             row.trailing = issue.message
             warnings.append(row)
         }
-        if !model.isAuthorized {
-            warnings.append(.warning("Needs Accessibility", actionTitle: "Grant") { [weak model] in model?.requestAccess() })
-        } else if !model.tapRunning {
+        // Accessibility itself is the dropdown's banner, for the whole app.
+        if model.isAuthorized && !model.tapRunning {
             warnings.append(.warning("Keyboard tap isn't running", actionTitle: "Relaunch") { Relaunch.now() })
         }
         if !model.hotKeySwitchAvailable {
@@ -87,29 +90,25 @@ enum MacsBoredMenu {
 
     // MARK: - General
 
-    private static func toggles(_ model: MacsBoredModel) -> [StatusMenuEntry] {
+    private static func toggles(_ model: MacsBoredModel) -> [MenuEntry] {
         let config = model.config
-        var pause = StatusMenuEntry.toggle("Pause shortcut", symbol: "pause.circle", isOn: config.pauseKeys != nil) {
+        var pause = MenuEntry.toggle("Pause shortcut", symbol: "pause.circle", isOn: config.pauseKeys != nil) {
             [weak model] in
             guard let model else { return }
             model.setPauseKeys(model.config.pauseKeys == nil ? MacsBoredConfig.defaultPauseKeys : nil)
         }
         pause.trailing = (config.pauseKeys ?? MacsBoredConfig.defaultPauseKeys).displayName
-        var hyper = StatusMenuEntry.toggle("Caps Lock as Hyper", symbol: "capslock", isOn: config.hyperKeyEnabled) {
+        var hyper = MenuEntry.toggle("Caps Lock as Hyper", symbol: "capslock", isOn: config.hyperKeyEnabled) {
             [weak model] in
             guard let model else { return }
             model.setHyperKey(!model.config.hyperKeyEnabled)
         }
         hyper.trailing = "⌃⌥⇧⌘"
-        var file = StatusMenuEntry.command("Settings file", symbol: "doc.text", key: "settings-file") { [weak model] in
+        var file = MenuEntry.command("Settings file", symbol: "doc.text", key: "settings-file") { [weak model] in
             model?.revealConfigFile()
         }
         file.trailing = "config.json"
         return [
-            .toggle("Open at login", symbol: "power", isOn: model.openAtLogin) { [weak model] in
-                guard let model else { return }
-                model.setOpenAtLogin(!model.openAtLogin)
-            },
             pause,
             hyper,
             file,
@@ -118,24 +117,27 @@ enum MacsBoredMenu {
 
     // MARK: - Lists
 
-    private static func profileGroup(_ model: MacsBoredModel) -> StatusMenuGroup {
+    private static func profileGroup(_ model: MacsBoredModel) -> MenuGroup {
         let rows = model.config.profiles.map { profile in
-            var row = StatusMenuEntry.toggle(profile.name, symbol: "macwindow", isOn: profile.isEnabled,
+            var row = MenuEntry.toggle(profile.name, symbol: "macwindow", isOn: profile.isEnabled,
                                              key: "profile-\(profile.id)",
                                              secondary: ("pencil", "Edit", { [weak model] in model?.editProfile(profile.id) }),
                                              trash: ("Delete \(profile.name)", { [weak model] in model?.deleteProfile(profile.id) })) {
                 [weak model] in model?.toggleProfile(profile.id)
             }
-            row.appIcon = profile.apps.first.flatMap { AppIcons.icon(bundleID: $0.bundleID) }
+            if let icon = profile.apps.first.flatMap({ AppIcons.icon(bundleID: $0.bundleID) }) { row.leading = .appIcon(icon) }
             return row
         }
-        return StatusMenuGroup(title: "Passthrough apps", rows: rows,
-                               empty: "None yet. Click New to give Windows App, Citrix Viewer or a virtual machine macOS's shortcuts.")
+        let new = MenuEntry.command("New passthrough app", symbol: "plus", key: "profile-new") { [weak model] in
+            model?.newEntry(.passthrough)
+        }
+        return MenuGroup(title: "Passthrough apps", rows: rows, actions: [new],
+                         empty: "None yet. A passthrough app, such as Windows App, Citrix Viewer or a virtual machine, gets macOS's shortcuts.")
     }
 
-    private static func triggerGroup(_ model: MacsBoredModel) -> StatusMenuGroup {
+    private static func triggerGroup(_ model: MacsBoredModel) -> MenuGroup {
         let rows = model.config.triggers.map { trigger in
-            var row = StatusMenuEntry.toggle(trigger.name, symbol: trigger.action.kind.symbol, isOn: trigger.isEnabled,
+            var row = MenuEntry.toggle(trigger.name, symbol: trigger.action.kind.symbol, isOn: trigger.isEnabled,
                                              key: "trigger-\(trigger.id)",
                                              secondary: ("pencil", "Edit", { [weak model] in model?.editTrigger(trigger.id) }),
                                              trash: ("Delete \(trigger.name)", { [weak model] in model?.deleteTrigger(trigger.id) })) {
@@ -146,8 +148,20 @@ enum MacsBoredMenu {
                 : "\(trigger.keys[0].displayName) +\(trigger.keys.count - 1)"
             return row
         }
-        return StatusMenuGroup(title: "Triggers", rows: rows,
-                               empty: "None yet. Click New to make one: remap keys, open something or run a Shortcut.")
+        // A trigger is one of three kinds: its menu says which, as MacsPane's New preset says how.
+        let new = MenuEntry.submenu("New trigger", symbol: "plus", key: "trigger-new", items: [
+            .command("Remap keys", symbol: EntryDraft.Tab.remap.symbol, key: "trigger-new-remap") { [weak model] in
+                model?.newEntry(.remap)
+            },
+            .command("Open an app, link or file", symbol: EntryDraft.Tab.open.symbol, key: "trigger-new-open") { [weak model] in
+                model?.newEntry(.open)
+            },
+            .command("Run a Shortcut", symbol: EntryDraft.Tab.shortcut.symbol, key: "trigger-new-shortcut") { [weak model] in
+                model?.newEntry(.shortcut)
+            },
+        ])
+        return MenuGroup(title: "Triggers", rows: rows, actions: [new],
+                         empty: "None yet. A trigger gives a key a job: remap keys, open something or run a Shortcut.")
     }
 }
 

@@ -29,7 +29,9 @@ else
 fi
 
 [[ "${1:-}" == "--build" ]] && { echo "$APP"; exit 0; }
-pkill -x "mac++" 2>/dev/null || true
-sleep 0.5
+# pkill takes a regular expression, so the pluses are escaped. Wait for the old copy to finish
+# quitting (MacsBored hands the shortcuts back first), or `open` would just bring it forward.
+pkill -x 'mac\+\+' 2>/dev/null || true
+for _ in {1..50}; do pgrep -x 'mac\+\+' >/dev/null || break; sleep 0.1; done
 open "$APP"
 echo "mac++ running from $APP"

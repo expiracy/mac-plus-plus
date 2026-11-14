@@ -19,28 +19,6 @@ enum SetupStage {
     static var menuBarHeight: CGFloat { NotchGeometry.standardNotchSize.height * scale }
 }
 
-/// The line above a step's picture, with the step's buttons at its right. One height whether or not
-/// there are buttons, so the picture starts at the same place on every step.
-struct SetupIntroRow<Trailing: View>: View {
-    let text: String
-    @ViewBuilder var trailing: () -> Trailing
-
-    var body: some View {
-        HStack {
-            Text(text).font(.callout.monospacedDigit()).foregroundStyle(.secondary)
-                .contentTransition(.numericText())
-            Spacer()
-            trailing()
-        }
-        .controlSize(.small)
-        .frame(height: 24)
-    }
-}
-
-extension SetupIntroRow where Trailing == EmptyView {
-    init(text: String) { self.init(text: text) { EmptyView() } }
-}
-
 struct SetupDesktop<Notch: View>: View {
     var height: CGFloat?
     /// Off while a wide notch drawing covers the menu bar's ends, so no word is drawn half-hidden.
@@ -155,25 +133,4 @@ struct SetupKeyCaps: View {
     }
 }
 
-struct SetupLessonStep: View {
-    let title: String
-    let detail: String
-    let done: Bool
-
-    var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Image(systemName: done ? "checkmark.circle.fill" : "circle")
-                .foregroundStyle(done ? Color.accentColor : Color.secondary)
-                .contentTransition(.symbolEffect(.replace))
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(.callout.weight(.semibold))
-                Text(detail).font(.caption).foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .topLeading)
-        .accessibilityElement(children: .combine)
-        .accessibilityValue(done ? "Done" : "Not yet")
-    }
-}
 #endif

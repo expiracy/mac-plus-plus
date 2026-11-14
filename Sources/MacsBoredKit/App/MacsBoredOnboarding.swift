@@ -1,20 +1,20 @@
 #if canImport(AppKit)
+import MacsShared
 import AppKit
 import SwiftUI
 import MacsBoredCore
 
-/// First-time setup, laid out as MacsPane's: the mark and name over a sidebar of numbered steps on
-/// the system sidebar material, the step's title and one line under it, the step itself, and Back ·
-/// progress dots · Continue at the foot. Two of the steps are hands-on: a sample remote session to
-/// try passthrough on, and sample triggers.
-struct SetupView: View {
+/// MacsBored's part of mac++'s onboarding: what it does, then two hands-on lessons (a sample remote
+/// session to try passthrough on, and sample triggers), then which installed remote-desktop apps get
+/// macOS's shortcuts. Accessibility and the menu bar are mac++'s own steps, either side of every
+/// tool's lessons.
+final class MacsBoredOnboarding: ObservableObject, OnboardingPart {
     enum Step: Int, CaseIterable {
-        case welcome, access, passthrough, trigger, apps
+        case welcome, passthrough, trigger, apps
 
         var sidebar: String {
             switch self {
-            case .welcome: "Welcome"
-            case .access: "Accessibility"
+            case .welcome: "What it does"
             case .passthrough: "Try passthrough"
             case .trigger: "Try a trigger"
             case .apps: "Choose your apps"
@@ -23,8 +23,7 @@ struct SetupView: View {
 
         var title: String {
             switch self {
-            case .welcome: "Welcome to MacsBored"
-            case .access: "Allow Accessibility"
+            case .welcome: "Meet MacsBored"
             case .passthrough: "Try passthrough"
             case .trigger: "Try a trigger"
             case .apps: "Choose your apps"
@@ -34,7 +33,6 @@ struct SetupView: View {
         var subtitle: String {
             switch self {
             case .welcome: "Your Mac's shortcuts, sent to the computer you're remoting into."
-            case .access: "The one permission MacsBored needs to see your keys."
             case .passthrough: "What happens to ⌘⇥ and friends in a remote session, practised on a sample one."
             case .trigger: "A key of your own that does one job, wherever you are."
             case .apps: "The apps that get macOS's shortcuts. Change them any time from the menu bar."
@@ -43,8 +41,7 @@ struct SetupView: View {
 
         var symbol: String {
             switch self {
-            case .welcome: "sparkles"
-            case .access: "lock.shield"
+            case .welcome: "command"
             case .passthrough: "arrow.right.to.line"
             case .trigger: "keyboard"
             case .apps: "square.grid.2x2"
@@ -52,182 +49,74 @@ struct SetupView: View {
         }
     }
 
-    @ObservedObject var model: MacsBoredModel
-    let onDone: () -> Void
-    @State private var step: Step
-    @State private var picked: Set<String> = []
+    let model: MacsBoredModel
+    /// The remote-desktop apps ticked on the last step; every installed one to start with.
+    @Published var picked: Set<String>
 
-    init(model: MacsBoredModel, startAt step: Step = .welcome, onDone: @escaping () -> Void) {
+    init(model: MacsBoredModel) {
         self.model = model
-        self.onDone = onDone
-        _step = State(initialValue: step)
+        picked = Set(Self.installed.map(\.bundleID))
     }
 
-    private var installed: [AppRef] {
+    static var installed: [AppRef] {
         KnownPassthroughApps.all.filter { NSWorkspace.shared.urlForApplication(withBundleIdentifier: $0.bundleID) != nil }
     }
 
-    /// The window's content size, as MacsPane's setup: room for a lesson's stage beside the sidebar.
-    static let size = CGSize(width: 1000, height: 660)
-    private static let sidebarWidth: CGFloat = 224
-    private static let gutter: CGFloat = 36
-    private static let footerHeight: CGFloat = 64
+    let name = "MacsBored"
+
+    var steps: [OnboardingStep] {
+        Step.allCases.map { step in
+            OnboardingStep(title: step.title, subtitle: step.subtitle, symbol: step.symbol, shortTitle: step.sidebar) {
+                [unowned self] in AnyView(MacsBoredSetupView(part: self, model: self.model, step: step))
+            }
+        }
+    }
+
+    func didShow(step: Int?) {}
+
+    /// The ticked apps become passthrough apps.
+    func finish() {
+        MainActor.assumeIsolated {
+            model.addProfiles(for: Self.installed.filter { picked.contains($0.bundleID) })
+            model.completeSetup()
+        }
+    }
+
+    /// Closing counts as done: onboarding isn't opened at launch again.
+    func close() {
+        MainActor.assumeIsolated { model.completeSetup() }
+    }
+}
+
+/// One of MacsBored's onboarding steps.
+struct MacsBoredSetupView: View {
+    @ObservedObject var part: MacsBoredOnboarding
+    @ObservedObject var model: MacsBoredModel
+    let step: MacsBoredOnboarding.Step
+
+    private var installed: [AppRef] { MacsBoredOnboarding.installed }
 
     var body: some View {
-        HStack(spacing: 0) {
-            sidebar
-                .frame(width: Self.sidebarWidth)
-                .frame(maxHeight: .infinity)
-                .background(SidebarMaterial())
-            Divider().ignoresSafeArea()
-            VStack(alignment: .leading, spacing: 0) {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(step.title).font(.system(size: 26, weight: .bold))
-                    Text(step.subtitle).font(.system(size: 14)).foregroundStyle(.secondary)
-                }
-                .padding(.top, 36)
-                .padding(.bottom, 18)
-                .fixedSize(horizontal: false, vertical: true)
-                Group {
-                    switch step {
-                    case .welcome: welcome
-                    case .access: access
-                    case .passthrough: PassthroughLesson()
-                    case .trigger: TriggerLesson()
-                    case .apps: apps
-                    }
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                .id(step)
-                .transition(.opacity)
-                footer
-            }
-            .padding(.horizontal, Self.gutter)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(Color(nsColor: .windowBackgroundColor))
+        switch step {
+        case .welcome: welcome
+        case .passthrough: PassthroughLesson()
+        case .trigger: TriggerLesson()
+        case .apps: apps
         }
-        .frame(minWidth: Self.size.width, maxWidth: .infinity, minHeight: Self.size.height, maxHeight: .infinity)
-        .ignoresSafeArea()
-        .animation(.easeInOut(duration: 0.18), value: step)
-        .onAppear { picked = Set(installed.map(\.bundleID)) }
-    }
-
-    // MARK: - Sidebar
-
-    private var sidebar: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 11) {
-                MacsBoredLogo(size: 40)
-                    .shadow(color: .black.opacity(0.12), radius: 2, y: 1)
-                VStack(alignment: .leading, spacing: 1) {
-                    Text("MacsBored").font(.system(size: 15, weight: .semibold))
-                    Text("First-time setup").font(.caption).foregroundStyle(.secondary)
-                }
-            }
-            .padding(.horizontal, 20)
-            .padding(.top, 52)
-            .padding(.bottom, 28)
-            VStack(alignment: .leading, spacing: 2) {
-                ForEach(Step.allCases, id: \.self) { stepRow($0) }
-            }
-            .padding(.horizontal, 10)
-            Spacer()
-            Label {
-                Text("You can change all of this later from the menu bar.").fixedSize(horizontal: false, vertical: true)
-            } icon: {
-                Image(systemName: "menubar.arrow.up.rectangle")
-            }
-            .font(.caption)
-            .foregroundStyle(.secondary)
-            .padding(.horizontal, 20)
-            .padding(.bottom, 22)
-        }
-    }
-
-    /// A numbered step, ticked once passed.
-    private func stepRow(_ item: Step) -> some View {
-        let selected = item == step
-        let passed = item.rawValue < step.rawValue
-        return Button { step = item } label: {
-            HStack(spacing: 10) {
-                ZStack {
-                    Circle().fill(selected || passed ? Color.accentColor : Color.primary.opacity(0.07))
-                    if passed {
-                        Image(systemName: "checkmark").font(.system(size: 10, weight: .bold))
-                    } else {
-                        Text("\(item.rawValue + 1)").font(.system(size: 11, weight: .semibold).monospacedDigit())
-                    }
-                }
-                .foregroundStyle(selected || passed ? Color.white : Color.secondary)
-                .frame(width: 22, height: 22)
-                Text(item.sidebar)
-                    .lineLimit(1)
-                    .font(.system(size: 13, weight: selected ? .semibold : .regular))
-                    .foregroundStyle(selected ? Color.primary : Color.primary.opacity(0.75))
-                Spacer(minLength: 0)
-            }
-            .padding(.horizontal, 10)
-            .frame(height: 38)
-            .background {
-                if selected { RoundedRectangle(cornerRadius: 9, style: .continuous).fill(Color.primary.opacity(0.07)) }
-            }
-            .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("Step \(item.rawValue + 1), \(item.title)")
-        .accessibilityAddTraits(selected ? [.isSelected] : [])
-    }
-
-    // MARK: - Footer
-
-    private var footer: some View {
-        ZStack {
-            HStack(spacing: 6) {
-                ForEach(Step.allCases, id: \.self) { item in
-                    Capsule()
-                        .fill(item == step ? Color.accentColor : Color.primary.opacity(item.rawValue < step.rawValue ? 0.35 : 0.15))
-                        .frame(width: item == step ? 18 : 6, height: 6)
-                }
-            }
-            .accessibilityElement()
-            .accessibilityLabel("Step \(step.rawValue + 1) of \(Step.allCases.count)")
-            HStack(spacing: 12) {
-                if step != .welcome {
-                    Button("Back") { step = Step(rawValue: step.rawValue - 1) ?? .welcome }
-                }
-                Spacer()
-                if step == .apps {
-                    Button("Start using MacsBored") {
-                        model.addProfiles(for: installed.filter { picked.contains($0.bundleID) })
-                        onDone()
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .keyboardShortcut(.defaultAction)
-                } else {
-                    Button("Continue") { step = Step(rawValue: step.rawValue + 1) ?? .apps }
-                        .buttonStyle(.borderedProminent)
-                        .keyboardShortcut(.defaultAction)
-                }
-            }
-        }
-        .controlSize(.large)
-        .frame(height: Self.footerHeight)
-        .overlay(alignment: .top) { Divider().padding(.horizontal, -Self.gutter) }
-        .fixedSize(horizontal: false, vertical: true)
     }
 
     // MARK: - Steps
 
     private var welcome: some View {
         VStack(alignment: .leading, spacing: 14) {
-            SetupCard {
+            ContentCard {
                 VStack(alignment: .leading, spacing: 16) {
                     explainer("arrow.right.to.line", "Pass shortcuts to a remote session",
                               "In Windows App, Citrix or a virtual machine, ⌘⇥, Spotlight and the rest go to the other computer, not your Mac.")
                     explainer("keyboard", "Give a key a job with a trigger",
                               "Remap keys, open an app, a link or a file, run a Shortcut, or pass just some keys to the app in front.")
                     explainer("menubar.rectangle", "Everything else is in the menu bar",
-                              "Pausing, New, and Setup live under the MacsBored icon.")
+                              "Pausing, your passthrough apps and triggers are on MacsBored's page under the mac++ icon.")
                     explainer("doc.text", "Or set it all up from a file",
                               "Every setting is in one JSON file that MacsBored reloads the moment it changes, so you, a script or an AI agent can edit it.")
                 }
@@ -236,77 +125,30 @@ struct SetupView: View {
         }
     }
 
-    private var access: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            SetupCard {
-                HStack(spacing: 13) {
-                    IconTile(symbol: "keyboard", tint: .accentColor, size: 34)
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text("Accessibility").font(.callout.weight(.semibold))
-                        Text("Lets MacsBored see keys before macOS acts on them, and tell when a window is full screen. It reads nothing else.")
-                            .font(.caption).foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                    Spacer(minLength: 14)
-                    if model.isAuthorized {
-                        Label("Granted", systemImage: "checkmark.circle.fill").font(.callout).foregroundStyle(.green)
-                    } else {
-                        Button("Grant Access") { model.requestAccess() }
-                            .buttonStyle(.borderedProminent)
-                    }
-                }
-            }
-            Label(model.isAuthorized
-                    ? "All set. Passthrough apps now get their shortcuts, and triggers work everywhere."
-                    : "macOS opens System Settings at the Accessibility list. This step notices as soon as it's on. Until then, macOS keeps every shortcut.",
-                  systemImage: "info.circle")
-                .font(.caption).foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-            Spacer(minLength: 0)
-        }
-    }
-
     private var apps: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text(picked.count == 1 ? "1 app gets the shortcuts" : "\(picked.count) apps get the shortcuts")
+            Text(part.picked.count == 1 ? "1 app gets the shortcuts" : "\(part.picked.count) apps get the shortcuts")
                 .font(.callout).foregroundStyle(.secondary)
             if installed.isEmpty {
-                Text("No remote-desktop app is installed yet. Add one later with New in the menu bar.")
+                Text("No remote-desktop app is installed yet. Add one later with New passthrough app in the menu bar.")
                     .font(.callout).foregroundStyle(.secondary)
             }
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 14)], spacing: 14) {
-                ForEach(installed) { app in appCard(app, on: picked.contains(app.bundleID)) }
+                ForEach(installed) { app in appCard(app, on: part.picked.contains(app.bundleID)) }
             }
             Spacer(minLength: 0)
-            settingCard("power", "Open at login", "MacsBored starts with your Mac, so passthrough is always ready.") {
-                Toggle("Open MacsBored at login", isOn: Binding(get: { model.openAtLogin }, set: { model.setOpenAtLogin($0) }))
-            }
-            settingCard("capslock", "Caps Lock as Hyper", "Caps Lock holds ⌃⌥⇧⌘, a modifier no app uses, for triggers of your own.") {
+            SettingCard(symbol: "capslock", title: "Caps Lock as Hyper",
+                        detail: "Caps Lock holds ⌃⌥⇧⌘, a modifier no app uses, for triggers of your own.") {
                 Toggle("Caps Lock as Hyper", isOn: Binding(get: { model.config.hyperKeyEnabled }, set: { model.setHyperKey($0) }))
+                    .labelsHidden()
             }
         }
         .padding(.bottom, 16)
     }
 
-    /// A setting on a setup step, drawn the same as MacsPane's: its icon, name and line, and its switch.
-    private func settingCard<Control: View>(_ symbol: String, _ title: String, _ detail: String,
-                                            @ViewBuilder control: () -> Control) -> some View {
-        SetupCard(padding: 10) {
-            HStack(spacing: 10) {
-                IconTile(symbol: symbol, tint: .secondary, size: 24)
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(title).font(.callout.weight(.semibold))
-                    Text(detail).font(.caption).foregroundStyle(.secondary)
-                }
-                Spacer()
-                control().toggleStyle(.switch).controlSize(.small).labelsHidden()
-            }
-        }
-    }
-
     private func appCard(_ app: AppRef, on: Bool) -> some View {
         Button {
-            if on { picked.remove(app.bundleID) } else { picked.insert(app.bundleID) }
+            if on { part.picked.remove(app.bundleID) } else { part.picked.insert(app.bundleID) }
         } label: {
             VStack(spacing: 10) {
                 if let icon = AppIcons.icon(bundleID: app.bundleID) {
@@ -331,60 +173,11 @@ struct SetupView: View {
     }
 
     private func explainer(_ symbol: String, _ title: String, _ detail: String) -> some View {
-        HStack(alignment: .top, spacing: 12) {
-            IconTile(symbol: symbol, tint: .accentColor, size: 28)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(.callout.weight(.semibold))
-                Text(detail).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            }
-        }
+        FeatureRow(symbol, title, detail)
     }
-}
-
-/// A rounded, faintly filled panel: the one card style every setup step uses, as in MacsPane.
-struct SetupCard<Content: View>: View {
-    var padding: CGFloat = 16
-    @ViewBuilder var content: Content
-
-    var body: some View {
-        content
-            .padding(padding)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.primary.opacity(0.035)))
-            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Color.primary.opacity(0.08)))
-    }
-}
-
-/// The system sidebar material, so the step list reads like every other Mac setup window.
-private struct SidebarMaterial: NSViewRepresentable {
-    func makeNSView(context: Context) -> NSVisualEffectView {
-        let view = NSVisualEffectView()
-        view.material = .sidebar
-        view.blendingMode = .behindWindow
-        view.state = .followsWindowActiveState
-        return view
-    }
-
-    func updateNSView(_ view: NSVisualEffectView, context: Context) {}
 }
 
 // MARK: - The lessons' shared pieces
-
-/// The line above a lesson's picture, with its buttons at its right.
-private struct LessonIntro<Trailing: View>: View {
-    let text: String
-    @ViewBuilder var trailing: Trailing
-
-    var body: some View {
-        HStack(spacing: 6) {
-            Text(text).font(.callout).foregroundStyle(.secondary)
-            Spacer()
-            trailing
-        }
-        .controlSize(.small)
-        .frame(height: 24)
-    }
-}
 
 /// The top of a Mac screen: wallpaper and a menu bar naming the app in front.
 private struct LessonDesktop<Content: View>: View {
@@ -417,27 +210,6 @@ private struct LessonDesktop<Content: View>: View {
         .frame(height: 280)
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Color.primary.opacity(0.08)))
-    }
-}
-
-private struct LessonStep: View {
-    let title: String
-    let detail: String
-    let done: Bool
-
-    var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Image(systemName: done ? "checkmark.circle.fill" : "circle")
-                .foregroundStyle(done ? Color.accentColor : Color.secondary)
-                .contentTransition(.symbolEffect(.replace))
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(.callout.weight(.semibold))
-                Text(detail).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .topLeading)
-        .accessibilityElement(children: .combine)
-        .accessibilityValue(done ? "Done" : "Not yet")
     }
 }
 

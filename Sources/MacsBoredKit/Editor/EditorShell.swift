@@ -1,54 +1,8 @@
 #if canImport(AppKit)
+import MacsShared
 import AppKit
 import SwiftUI
 import MacsBoredCore
-
-/// One editor window at a time, opened from a row's pencil or the menu's New.
-@MainActor
-final class EditorWindowController: NSObject, NSWindowDelegate {
-    private var window: NSWindow?
-    var onClose: () -> Void = {}
-
-    /// A window of `size`, or, with `fitsContent`, one that takes the content's own size and follows it
-    /// as it grows and shrinks.
-    func show<Content: View>(title: String, size: CGSize, fitsContent: Bool = false, @ViewBuilder content: () -> Content) {
-        close()
-        let window = NSWindow(contentRect: NSRect(origin: .zero, size: size),
-                              styleMask: [.titled, .closable, .miniaturizable, .fullSizeContentView],
-                              backing: .buffered, defer: false)
-        window.title = title
-        window.titleVisibility = .hidden
-        window.titlebarAppearsTransparent = true
-        window.isReleasedWhenClosed = false
-        let host = NSHostingController(rootView: content())
-        if fitsContent {
-            host.sizingOptions = [.preferredContentSize]
-            // The content draws its own title row under the window's buttons, so the window's size is
-            // exactly the content's, with no room kept for a title bar.
-            host.safeAreaRegions = []
-        }
-        window.contentViewController = host
-        if !fitsContent { window.setContentSize(size) }
-        window.center()
-        window.delegate = self
-        self.window = window
-        NSApp.activate(ignoringOtherApps: true)
-        window.makeKeyAndOrderFront(nil)
-    }
-
-    func close() {
-        guard let window else { return }
-        self.window = nil
-        window.delegate = nil
-        window.close()
-        onClose()
-    }
-
-    func windowWillClose(_ notification: Notification) {
-        window = nil
-        onClose()
-    }
-}
 
 // MARK: - Form pieces, one look for every page
 

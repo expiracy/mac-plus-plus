@@ -1,4 +1,5 @@
 #if canImport(AppKit)
+import MacsShared
 import AppKit
 import Combine
 import MacsBoredCore
@@ -24,7 +25,6 @@ final class MacsBoredModel: ObservableObject {
     var isRecording = false { didSet { pushSetup() } }
 
     var onEdit: (EntryDraft) -> Void = { _ in }
-    var onShowSetup: () -> Void = {}
     var onPlanChange: (PassthroughPlan, Bool) -> Void = { _, _ in }
 
     private let store: MacsBoredConfigStore
@@ -209,8 +209,10 @@ final class MacsBoredModel: ObservableObject {
     // MARK: - Entries
 
     /// The editor on a new entry; its tabs say what it becomes.
-    func newEntry() {
-        onEdit(EntryDraft())
+    func newEntry(_ tab: EntryDraft.Tab = .remap) {
+        var draft = EntryDraft()
+        draft.tab = tab
+        onEdit(draft)
     }
 
     /// The editor on the passthrough tab with this app in it, as the Now card's "Pass through…" offers.

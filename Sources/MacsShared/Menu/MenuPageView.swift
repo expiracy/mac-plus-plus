@@ -1,134 +1,23 @@
 #if canImport(AppKit)
+import AppKit
 import SwiftUI
-import MacsShared
-import MacsPaneCore
 
-/// What the menu-bar dropdown shows and does. Rebuilt from the registry on open, after every click
-/// that leaves it open, and once a second while it is open (the timer counts down in front of you).
-final class StatusMenuModel: ObservableObject {
-    @Published private(set) var content = StatusMenuContent()
-    /// Where the menu-bar icon sits along the bubble's top edge, so its nub points at it; nil centres it.
-    @Published var nubX: CGFloat?
-    /// What is typed in the row being named in place (`StatusMenuContent.renaming`).
-    @Published var renameDraft = ""
-    /// The row whose trash was clicked once: its bin is now a red "bin?" pill and a second click deletes.
-    @Published var confirmingTrash: String?
-    /// The row whose choices hang under it in a small bubble ("New preset" → from the desktop, or drawn).
-    @Published var openSubmenu: String?
-    /// The name over the dropdown and its section titles.
-    let brand: StatusMenuBrand
-    /// Opens the first-time setup again (the footer's Setup button).
-    var onSetup: () -> Void = {}
-    var onQuit: () -> Void = {}
-    /// Set by the panel's owner; commands and grants close the dropdown before they act.
-    var onClose: () -> Void = {}
-    private let assemble: () -> StatusMenuContent
-
-    init(brand: StatusMenuBrand, assemble: @escaping () -> StatusMenuContent) {
-        self.brand = brand
-        self.assemble = assemble
-        refresh()
-    }
-
-    func refresh() {
-        content = assemble()
-    }
-
-    func pick(_ entry: StatusMenuEntry, index: Int) {
-        entry.select?(index)
-        refresh()
-    }
-
-    /// A live line clicked off its button: close, then show its page in the notch.
-    func open(_ entry: StatusMenuEntry) {
-        guard let open = entry.open else { return }
-        onClose()
-        open()
-    }
-
-    /// A row of a list dragged to a new place.
-    func move(_ group: StatusMenuGroup, from source: Int, to destination: Int) {
-        group.move?(source, destination)
-        refresh()
-    }
-
-    /// A row's trash button: the first click asks, the second deletes. The dropdown stays open.
-    func runTrash(_ entry: StatusMenuEntry) {
-        guard confirmingTrash == entry.id else { confirmingTrash = entry.id; return }
-        confirmingTrash = nil
-        entry.trash?.action()
-        refresh()
-    }
-
-    /// The row being named in place takes what was typed (Return, a click away, the dropdown closing),
-    /// or keeps its name (`cancel`, esc).
-    func finishRename(cancel: Bool = false) {
-        guard let id = content.renaming,
-              let entry = content.groups.flatMap(\.rows).first(where: { $0.id == id }) else { return }
-        entry.rename?(cancel ? nil : renameDraft)
-        refresh()
-    }
-
-    /// The pointer left a row that was asking to delete: it asks no more.
-    func cancelTrash(_ entry: StatusMenuEntry) {
-        if confirmingTrash == entry.id { confirmingTrash = nil }
-    }
-
-    /// A command row's second button.
-    func runSecondary(_ entry: StatusMenuEntry) {
-        guard let secondary = entry.secondary else { return }
-        onClose()
-        secondary.action()
-    }
-
-    /// A row with choices clicked: its bubble opens, or closes if it was open.
-    func toggleSubmenu(_ entry: StatusMenuEntry) {
-        openSubmenu = openSubmenu == entry.id ? nil : entry.id
-    }
-
-    func run(_ entry: StatusMenuEntry) {
-        openSubmenu = nil
-        guard let action = entry.action else { return }
-        switch entry.kind {
-        case .toggle, .live, .choice:
-            action()
-            refresh()
-            // An owner that settles a beat later (the quiet bell) is read again once it has.
-            DispatchQueue.main.async { [weak self] in self?.refresh() }
-        case .command where entry.keepsOpen:
-            action()
-            refresh()
-        case .command, .warning, .section:
-            onClose()
-            action()
-        }
-    }
-}
-
-/// The dropdown's name and section titles.
-struct StatusMenuBrand {
-    var name: String
-    /// The title over the box of what is live.
-    var liveTitle = "Now"
-    /// The box's line when nothing is live; nil leaves the box out until something is.
-    var emptyLive: String? = "Nothing running"
-    /// The title over the switches.
-    var togglesTitle = "Notch"
-}
-
-/// The menu-bar icon's dropdown, in the same style as the rest of MacsPane (setup, the editor, the
-/// prompts): a bubble whose nub points up at the icon; the mark, the name and the main switch; then rounded cards, each under a
-/// small title: the last change with its Undo, any warning with its fix, the general switches, and
-/// the titled lists (presets, layouts). Rows lead with a tinted icon tile, or a layout's own shape.
-/// A long list scrolls inside its card, and a list that can be reordered has a grip on every row:
-/// drag it and the other rows slide aside. Setup and Quit sit at the foot.
-struct StatusMenuView: View {
-    @ObservedObject var model: StatusMenuModel
-    /// Drawn as a page of mac++'s dropdown, which supplies the bubble and the width.
-    var embedded = false
+/// A tool's page of the dropdown, drawn the same for every tool: the tool's mark, name and main
+/// switch; then rounded cards, each under a small title: what is happening now with its one button,
+/// any warning with its fix, the general switches, and the titled lists. Rows lead with a tinted icon
+/// tile, an app's icon or a drawing of the tool's own. A long list scrolls inside its card, and a list
+/// that can be reordered has a grip on every row: drag it and the other rows slide aside. The
+/// dropdown around it adds the switcher, the bubble and the footer shared by every page.
+public struct MenuPageView: View {
+    @ObservedObject var model: MenuPageModel
+    @Environment(\.openHelp) private var openHelp
     @State private var hoveredRow: String?
     @State private var hoveredTrash: String?
     @State private var drag: RowDrag?
+
+    public init(model: MenuPageModel) {
+        self.model = model
+    }
 
     /// The row being dragged by its grip: which list, where it started, and how far the pointer has gone.
     private struct RowDrag: Equatable {
@@ -137,11 +26,10 @@ struct StatusMenuView: View {
         var height: CGFloat
     }
 
-    private enum Metric {
-        static let width: CGFloat = 360
+    enum Metric {
         static let edge: CGFloat = 12
         static let row: CGFloat = 38
-        static let corner: CGFloat = 12
+        static let corner: CGFloat = CardStyle.corner
         static let tile: CGFloat = 24
         /// A list taller than this many rows scrolls; the half row peeking out says there is more.
         static let visibleRows: CGFloat = 3.5
@@ -150,20 +38,18 @@ struct StatusMenuView: View {
         static let submenuNubX: CGFloat = 10 + tile / 2 + 1 - 4
     }
 
-    var body: some View {
+    public var body: some View {
         let content = model.content
         VStack(alignment: .leading, spacing: 14) {
             header(content)
             if !content.live.isEmpty || model.brand.emptyLive != nil { liveCard(content.live) }
             ForEach(content.warnings) { warningCard($0) }
             if !content.toggles.isEmpty {
-                card(model.brand.togglesTitle) { rows(content.toggles) }
+                TitledCard(model.brand.togglesTitle) { rows(content.toggles) }
             }
             ForEach(content.groups) { groupCard($0) }
-            footer
         }
         .padding(Metric.edge)
-        .modifier(MenuBubble(drawn: !embedded, width: Metric.width, nubX: model.nubX))
         .overlayPreferenceValue(SubmenuAnchorKey.self) { anchors in submenuLayer(anchors) }
     }
 
@@ -188,12 +74,12 @@ struct StatusMenuView: View {
         }
     }
 
-    private func submenuBubble(_ entry: StatusMenuEntry) -> some View {
+    private func submenuBubble(_ entry: MenuEntry) -> some View {
         VStack(spacing: 0) {
             ForEach(Array(entry.submenu.enumerated()), id: \.element.id) { index, item in
                 Button { model.run(item) } label: {
                     HStack(spacing: 10) {
-                        SetupIconTile(symbol: item.symbol ?? "circle", tint: .accentColor, size: Metric.tile)
+                        IconTile(symbol: item.symbol ?? "circle", tint: .accentColor, size: Metric.tile)
                         Text(item.title).lineLimit(1)
                         Spacer(minLength: 0)
                     }
@@ -223,45 +109,42 @@ struct StatusMenuView: View {
 
     // MARK: - Bands
 
-    private func header(_ content: StatusMenuContent) -> some View {
-        HStack(spacing: 10) {
-            MacsPaneLogo(size: 32)
-                .shadow(color: .black.opacity(0.12), radius: 2, y: 1)
-            VStack(alignment: .leading, spacing: 1) {
-                Text(model.brand.name).font(.system(size: 15, weight: .semibold))
-                if let line = content.liveFact ?? content.primary?.title {
-                    Text(line).font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                }
-            }
-            .accessibilityElement(children: .combine)
-            .accessibilityAddTraits(.isHeader)
-            Spacer(minLength: 4)
+    private func header(_ content: MenuPageContent) -> some View {
+        PageHeader(logo: model.brand.logo(32), title: model.brand.name,
+                   line: content.liveFact ?? content.primary?.title, help: openHelp) {
             if let primary = content.primary, case let .toggle(isOn, _, _) = primary.kind {
                 switchControl(primary, isOn: isOn)
             }
         }
-        .padding(.horizontal, 4)
     }
 
-    /// The last change, laid out as the on-screen Undo prompt is: its icon, what happened, the one button.
-    private func liveCard(_ live: [StatusMenuEntry]) -> some View {
-        card(model.brand.liveTitle) {
+    /// What is happening now: its icon (an app's own, when it is about an app), what and one fact,
+    /// and the one button, drawn in the accent when it is the point of the line.
+    private func liveCard(_ live: [MenuEntry]) -> some View {
+        TitledCard(model.brand.liveTitle) {
             if live.isEmpty, let empty = model.brand.emptyLive {
                 Text(empty).font(.callout).foregroundStyle(.secondary)
                     .padding(12).frame(maxWidth: .infinity, alignment: .leading)
             }
             ForEach(live) { entry in
-                if case let .live(fact, actionTitle, _) = entry.kind {
+                if case let .live(fact, actionTitle, accent) = entry.kind {
                     HStack(spacing: 10) {
-                        SetupIconTile(symbol: entry.symbol ?? "clock", size: 30)
+                        if case let .appIcon(image) = entry.leading {
+                            Image(nsImage: image).resizable().interpolation(.high).frame(width: 30, height: 30)
+                        } else {
+                            IconTile(symbol: entry.symbol ?? "clock", tint: accent ? .accentColor : .secondary, size: 30)
+                        }
                         VStack(alignment: .leading, spacing: 1) {
                             Text(entry.title).font(.headline).lineLimit(1)
-                            Text(fact).font(.callout).foregroundStyle(.secondary).lineLimit(1)
+                            if !fact.isEmpty {
+                                Text(fact).font(.callout).foregroundStyle(.secondary).lineLimit(1)
+                            }
                         }
                         Spacer(minLength: 6)
                         if let actionTitle {
                             Button(actionTitle) { model.run(entry) }
                                 .buttonStyle(.borderedProminent)
+                                .tint(accent ? .accentColor : .gray)
                                 .controlSize(.small)
                         }
                     }
@@ -274,9 +157,9 @@ struct StatusMenuView: View {
     }
 
     /// A feature that can't run yet: the reason, and the one click that fixes it, on an orange card.
-    private func warningCard(_ entry: StatusMenuEntry) -> some View {
+    private func warningCard(_ entry: MenuEntry) -> some View {
         HStack(spacing: 10) {
-            SetupIconTile(symbol: "exclamationmark.triangle.fill", tint: .orange, size: Metric.tile)
+            IconTile(symbol: "exclamationmark.triangle.fill", tint: .orange, size: Metric.tile)
             Text(entry.title).font(.callout.weight(.medium)).lineLimit(2)
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 6)
@@ -294,8 +177,8 @@ struct StatusMenuView: View {
 
     /// A titled list: its rows in a card (scrolling inside it once there are more than fit), or its
     /// empty line, then the commands that always show at the card's foot.
-    private func groupCard(_ group: StatusMenuGroup) -> some View {
-        card(group.title) {
+    private func groupCard(_ group: MenuGroup) -> some View {
+        TitledCard(group.title) {
             if group.rows.isEmpty, let empty = group.empty {
                 Text(empty)
                     .font(.callout).foregroundStyle(.secondary)
@@ -322,45 +205,11 @@ struct StatusMenuView: View {
         }
     }
 
-    private var footer: some View {
-        HStack(spacing: 8) {
-            footerButton("Setup", symbol: "sparkles", key: nil, action: model.onSetup)
-            footerButton("Quit", symbol: "power", key: "⌘Q", action: model.onQuit)
-        }
-        .controlSize(.large)
-    }
-
-    private func footerButton(_ title: String, symbol: String, key: String?,
-                              action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            HStack(spacing: 5) {
-                Image(systemName: symbol).accessibilityHidden(true)
-                Text(title)
-                if let key { Text(key).foregroundStyle(.secondary) }
-            }
-            .frame(maxWidth: .infinity)
-        }
-        .accessibilityLabel(title)
-    }
-
     // MARK: - Cards and rows
-
-    /// The app's one card: a small title, then a rounded, faintly filled panel holding the rows.
-    private func card<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(title).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-                .padding(.leading, 4)
-                .accessibilityAddTraits(.isHeader)
-            VStack(spacing: 0, content: content)
-                .background(RoundedRectangle(cornerRadius: Metric.corner, style: .continuous).fill(Color.primary.opacity(0.035)))
-                .overlay(RoundedRectangle(cornerRadius: Metric.corner, style: .continuous).strokeBorder(Color.primary.opacity(0.08)))
-                .clipShape(RoundedRectangle(cornerRadius: Metric.corner, style: .continuous))
-        }
-    }
 
     /// Rows separated by hairlines across the card. In a list that can be reordered (`group.move`),
     /// each row leads with a grip; while one is dragged the lines step aside so nothing is left behind.
-    private func rows(_ entries: [StatusMenuEntry], in group: StatusMenuGroup? = nil) -> some View {
+    private func rows(_ entries: [MenuEntry], in group: MenuGroup? = nil) -> some View {
         let movable = group?.move != nil && entries.count > 1 ? group : nil
         let dragging = movable != nil && drag?.group == movable?.id
         return VStack(spacing: 0) {
@@ -406,7 +255,7 @@ struct StatusMenuView: View {
 
     /// The handle a row is dragged by: faint until its row is under the pointer. Move up and Move down
     /// do the same for VoiceOver.
-    private func grip(_ entry: StatusMenuEntry, index: Int, count: Int, in group: StatusMenuGroup) -> some View {
+    private func grip(_ entry: MenuEntry, index: Int, count: Int, in group: MenuGroup) -> some View {
         let active = hoveredRow == entry.id || drag?.group == group.id && drag?.from == index
         return Image(systemName: "line.3.horizontal")
             .font(.system(size: 10, weight: .semibold))
@@ -440,7 +289,7 @@ struct StatusMenuView: View {
             }
     }
 
-    @ViewBuilder private func row(_ entry: StatusMenuEntry, grip: (some View)? = Optional<EmptyView>.none) -> some View {
+    @ViewBuilder private func row(_ entry: MenuEntry, grip: (some View)? = Optional<EmptyView>.none) -> some View {
         switch entry.kind {
         case .section:
             Text(entry.title).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
@@ -449,14 +298,15 @@ struct StatusMenuView: View {
                 if let grip { grip.padding(.trailing, -4) }
                 icon(entry, tint: .secondary)
                 if renaming(entry) {
-                    StatusMenuNameField(model: model, title: entry.title)
+                    MenuNameField(model: model, title: entry.title)
                 } else {
                     Text(entry.title).lineLimit(1).truncationMode(.tail)
                     Spacer(minLength: 4)
-                    if let shortcut = entry.shortcut {
-                        Text(shortcut).font(.callout.monospacedDigit())
+                    if let trailing = entry.trailing {
+                        Text(trailing).font(.callout.monospacedDigit())
                             .foregroundStyle(isOn ? AnyShapeStyle(.secondary) : AnyShapeStyle(.tertiary))
-                            .accessibilityLabel("Shortcut \(shortcut)")
+                            .lineLimit(1)
+                            .accessibilityLabel(entry.trailingLabel.map { "\($0) \(trailing)" } ?? trailing)
                     }
                     if let secondary = entry.secondary {
                         secondaryButton(entry, secondary, hovered: hoveredRow == entry.id)
@@ -494,14 +344,14 @@ struct StatusMenuView: View {
     /// something ("New preset…", a plus or a symbol badged with one) is drawn in the accent, like the app's other primary actions. A
     /// second button (Edit) sits at the end.
     /// The row just added and being named shows its name field in place of the title and buttons.
-    private func commandRow(_ entry: StatusMenuEntry, danger: Bool, grip: (some View)?) -> some View {
+    private func commandRow(_ entry: MenuEntry, danger: Bool, grip: (some View)?) -> some View {
         let hovered = hoveredRow == entry.id
-        let adds = (entry.symbol == "plus" || entry.symbol?.hasSuffix(".badge.plus") == true) && entry.boxes == nil
+        let adds = (entry.symbol == "plus" || entry.symbol?.hasSuffix(".badge.plus") == true) && entry.leadsWithSymbol
         if renaming(entry) {
             return AnyView(HStack(spacing: 10) {
                 if let grip { grip.padding(.trailing, -4) }
                 icon(entry, tint: .secondary)
-                StatusMenuNameField(model: model, title: entry.title)
+                MenuNameField(model: model, title: entry.title)
             }
             .padding(.leading, grip == nil ? 10 : 4)
             .padding(.trailing, 10)
@@ -514,10 +364,11 @@ struct StatusMenuView: View {
                 .foregroundStyle(danger ? AnyShapeStyle(.red) : adds ? AnyShapeStyle(Color.accentColor)
                                  : AnyShapeStyle(.primary))
             Spacer(minLength: 0)
-            if let shortcut = entry.shortcut {
-                Text(shortcut).font(.callout.monospacedDigit()).foregroundStyle(.secondary)
+            if let trailing = entry.trailing {
+                Text(trailing).font(.callout.monospacedDigit()).foregroundStyle(.secondary)
+                    .lineLimit(1)
                     .padding(.trailing, 4)
-                    .accessibilityLabel("Shortcut \(shortcut)")
+                    .accessibilityLabel(entry.trailingLabel.map { "\($0) \(trailing)" } ?? trailing)
             }
         }
         .padding(.leading, grip == nil ? 10 : 6)
@@ -550,17 +401,17 @@ struct StatusMenuView: View {
     }
 
     /// Whether `entry` is the row being named in place.
-    private func renaming(_ entry: StatusMenuEntry) -> Bool {
+    private func renaming(_ entry: MenuEntry) -> Bool {
         model.content.renaming == entry.id && entry.rename != nil
     }
 
-    private func hover(_ entry: StatusMenuEntry, _ inside: Bool) {
+    private func hover(_ entry: MenuEntry, _ inside: Bool) {
         hoveredRow = inside ? entry.id : (hoveredRow == entry.id ? nil : hoveredRow)
         if !inside { withAnimation(.bouncy(duration: 0.3)) { model.cancelTrash(entry) } }
     }
 
     /// A row's second button (Edit): quiet until its row is under the pointer.
-    private func secondaryButton(_ entry: StatusMenuEntry, _ secondary: (symbol: String, help: String, action: () -> Void),
+    private func secondaryButton(_ entry: MenuEntry, _ secondary: (symbol: String, help: String, action: () -> Void),
                                  hovered: Bool) -> some View {
         Button { model.runSecondary(entry) } label: {
             Image(systemName: secondary.symbol)
@@ -581,7 +432,7 @@ struct StatusMenuView: View {
     /// A row's trash button: quiet beside the pencil, red under the pointer. Clicked once, the bin
     /// grows a little into a red pill asking "bin?", and a second click deletes; leaving the row
     /// shrinks it back.
-    private func trashButton(_ entry: StatusMenuEntry) -> some View {
+    private func trashButton(_ entry: MenuEntry) -> some View {
         let hot = hoveredTrash == entry.id
         let asking = model.confirmingTrash == entry.id
         return Button { withAnimation(.bouncy(duration: 0.3, extraBounce: 0.15)) { model.runTrash(entry) } } label: {
@@ -608,26 +459,36 @@ struct StatusMenuView: View {
     }
 
     /// The system switch, wired to the entry's own action so the registry stays the one source of state.
-    private func switchControl(_ entry: StatusMenuEntry, isOn: Bool) -> some View {
+    private func switchControl(_ entry: MenuEntry, isOn: Bool) -> some View {
         Toggle(entry.title, isOn: Binding(get: { isOn }, set: { _ in model.run(entry) }))
             .toggleStyle(.switch)
             .controlSize(.small)
             .labelsHidden()
     }
 
-    /// A row's icon: a layout's or preset's own shape when it has one, else a tinted tile as setup uses.
-    @ViewBuilder private func icon(_ entry: StatusMenuEntry, tint: Color) -> some View {
-        if let boxes = entry.boxes {
-            // A preset's screen is drawn larger, so the apps in its boxes can be made out.
-            let size = entry.boxIcons.isEmpty ? CGSize(width: 26, height: 17) : CGSize(width: 38, height: 24)
-            MacsPaneLayoutGlyph(boxes: boxes, size: size, icons: entry.boxIcons, highlighted: entry.highlightedBox)
-                .frame(width: max(Metric.tile + 2, size.width), height: Metric.tile)
-        } else {
-            SetupIconTile(symbol: entry.symbol ?? "circle", tint: tint, size: Metric.tile)
+    /// A row's icon: a drawing of the tool's own, an app's icon, or a tinted tile.
+    @ViewBuilder private func icon(_ entry: MenuEntry, tint: Color) -> some View {
+        switch entry.leading {
+        case let .drawing(view, width):
+            view.frame(width: max(Metric.tile + 2, width), height: Metric.tile)
+        case let .appIcon(image):
+            Image(nsImage: image).resizable().interpolation(.high)
+                .frame(width: Metric.tile, height: Metric.tile)
+                .frame(width: Metric.tile + 2)
+        case .symbol:
+            IconTile(symbol: entry.symbol ?? "circle", tint: tint, size: Metric.tile)
                 .frame(width: Metric.tile + 2)
         }
     }
 }
+
+extension MenuEntry {
+    var leadsWithSymbol: Bool {
+        if case .symbol = leading { return true }
+        return false
+    }
+}
+
 /// Where each row with choices sits, so its bubble can hang under it.
 private struct SubmenuAnchorKey: PreferenceKey {
     static var defaultValue: [String: Anchor<CGRect>] = [:]
@@ -638,8 +499,8 @@ private struct SubmenuAnchorKey: PreferenceKey {
 
 /// A row's name being typed in place, focused with its text selected: Return keeps it, esc keeps the
 /// name it had, and clicking away or closing the dropdown keeps what was typed.
-private struct StatusMenuNameField: View {
-    @ObservedObject var model: StatusMenuModel
+private struct MenuNameField: View {
+    @ObservedObject var model: MenuPageModel
     let title: String
     @FocusState private var focused: Bool
 
@@ -654,25 +515,6 @@ private struct StatusMenuNameField: View {
                 DispatchQueue.main.async { focused = true }
             }
             .accessibilityLabel("Name")
-    }
-}
-/// The dropdown's own bubble, under the menu-bar icon or in setup's picture of it; left off when the
-/// view is a page of mac++'s dropdown, which draws one bubble round every page.
-private struct MenuBubble: ViewModifier {
-    let drawn: Bool
-    let width: CGFloat
-    let nubX: CGFloat?
-
-    func body(content: Content) -> some View {
-        if drawn {
-            content
-                .padding(.top, SpeechBubbleShape.standardNub.height)
-                .frame(width: width)
-                .background(SpeechBubbleShape(nubX: nubX).fill(Color(nsColor: .windowBackgroundColor)))
-                .overlay(SpeechBubbleShape(nubX: nubX).stroke(Color.primary.opacity(0.12), lineWidth: 1))
-        } else {
-            content
-        }
     }
 }
 #endif
