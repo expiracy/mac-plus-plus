@@ -11,14 +11,16 @@ Two menu-bar tools for macOS in one app, behind one icon.
 mac++'s mark is an apple with "++" inside. Click it in the menu bar and the dropdown opens on the page
 you used last. The switcher along its top moves between MacsPane and MacsBored (⌘1 and ⌘2 do the
 same). Each page is that tool's own menu, drawn the same way for both: its main switch, what it is doing
-now, its settings, and its lists with a New row under each. The foot of the dropdown belongs to the
+now, its settings, and its lists, each with a + on its title to make a new one. Click a section's title to fold it; each page
+remembers what is folded. The foot of the dropdown belongs to the
 whole app:
 
 - **Settings** (⌘,) opens mac++'s Settings.
 - **Quit mac++** (⌘Q) stops both tools; MacsBored gives macOS every shortcut back first.
 
 Settings is for mac++ only, one page drawn as System Settings draws a pane: which mac++ this is (its
-version), Accessibility (one grant covers both tools) and Open at login. Each tool's own settings, its
+version), Accessibility (one grant covers both tools), Open at login, and Size, which draws the whole
+menu Small, Default, Large or Larger. Each tool's own settings, its
 main switch among them, stay on its page of the menu.
 
 Settings holds settings only. What explains them is Help: the ? beside a tool's name, at the top of its
@@ -89,9 +91,10 @@ The executable also takes these, for scripts, agents and looking at a change:
 | `--open-onboarding [macspane\|macsbored]` | Open onboarding, at that tool's lessons. |
 | `--open-settings` | Open the dropdown on mac++'s Settings. |
 | `--open-help [macspane\|macsbored]` | Open the dropdown on that tool's Help, or on mac++'s. |
+| `--open-new-shortcut` | Open the dropdown on MacsPane's New Shortcut page. |
 | `--open-editor macspane` | Open MacsPane's box editor on a new preset. |
-| `--open-editor remap\|open\|shortcut\|passthrough` | Open MacsBored's editor on a new entry. |
-| `--snapshot-menu <dir>` | Write the dropdown's pages and their Help, Settings and mac++'s Help, light and dark, as PNGs, then quit. |
+| `--open-editor remap\|open\|shortcut\|passthrough` | Open the dropdown on MacsBored's editor, on a new entry of that kind. |
+| `--snapshot-menu <dir>` | Write the dropdown's pages, their Help and MacsPane's New Shortcut, Settings and mac++'s Help, light and dark, as PNGs, then quit. |
 | `--snapshot-windows <dir>` | Write every onboarding step as PNGs, then quit. |
 | `--export-icon <dir>` | Write the app icon and menu-bar marks as PNGs (`scripts/make_icon.sh` uses it). |
 | `--snapshot-macspane <dir>` | Write MacsPane's other surfaces as PNGs, then quit. |

@@ -4,12 +4,13 @@ import SwiftUI
 
 /// Development only: the dropdown drawn offscreen, to look at a change without the menu bar: each
 /// tool's page in each appearance (`menu-<tool>-light.png`, `menu-<tool>-dark.png`) and its Help
-/// (`menu-help-<tool>-…`), then Settings and each page named in `fromSettings` as it opens from it
+/// (`menu-help-<tool>-…`) and any of its own pages named in `toolPages`, then Settings and each page named in `fromSettings` as it opens from it
 /// (`menu-settings-…`, `menu-settings-<page>-…`).
 public enum TabbedMenuSnapshot {
     @MainActor public static func write(tabs: [MenuTab], banner: TabbedMenuBanner? = nil,
                                         pages: @escaping (String) -> TabbedMenuSubpage? = { _ in nil },
-                                        fromSettings: [String] = [], into directory: URL) {
+                                        fromSettings: [String] = [], toolPages: [String] = [],
+                                        into directory: URL) {
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         var actions = TabbedMenuActions.inert
         actions.banner = { banner }
@@ -33,6 +34,12 @@ public enum TabbedMenuSnapshot {
             if pages(help) != nil {
                 model.open(help)
                 shoot("menu-\(help)")
+                model.back(to: 0)
+            }
+            // The tool's own pages named in `toolPages` (`menu-<page>-…`).
+            for name in toolPages where tabs[index].subpage(name) != nil {
+                model.open(name)
+                shoot("menu-\(name)")
                 model.back(to: 0)
             }
         }

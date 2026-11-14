@@ -109,6 +109,11 @@ public struct HelpButton: View {
 extension EnvironmentValues {
     /// Set by the dropdown on a tool's page: opens that tool's Help over it.
     @Entry public var openHelp: (() -> Void)? = nil
+    /// Set by the dropdown on a page opened over a tool's page: goes back to the page under it.
+    @Entry public var closePage: (() -> Void)? = nil
+    /// Set by the dropdown on a page opened over a tool's page: runs something that leaves the
+    /// dropdown for a moment (a modal file chooser) with the dropdown hidden, and brings it back after.
+    @Entry public var stepAway: (() -> Void) -> Void = { $0() }
 }
 
 /// A rounded, faintly filled panel around its content, padded.
@@ -130,7 +135,7 @@ public struct ContentCard<Content: View>: View {
     }
 }
 
-/// A small title over a rounded panel of rows (the rows draw their own padding and hairlines).
+/// A small title, with anything at its end (a switch for them all), over a rounded panel of rows (the rows draw their own padding and hairlines).
 public struct TitledCard<Content: View>: View {
     let title: String
     let trailing: AnyView?

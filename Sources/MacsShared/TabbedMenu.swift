@@ -25,13 +25,59 @@ public struct TabbedMenuSubpage {
     public var content: AnyView
     public var refresh: () -> Void
     public var changes: AnyPublisher<Void, Never>
+    /// A key pressed while the page is on top, before the dropdown's own keys (esc, ⌘1…): true when
+    /// the page used it (a shortcut being recorded).
+    public var keyDown: ((NSEvent) -> Bool)?
+    /// True while the page's own controls take every key (a key recorder listening): the dropdown
+    /// then leaves keys alone, esc included.
+    public var ownsKeys: () -> Bool
+    /// A bar kept in view under the page however far it scrolls (an editor's Cancel and Save).
+    public var bar: AnyView?
 
     public init(title: String, content: AnyView, refresh: @escaping () -> Void = {},
-                changes: AnyPublisher<Void, Never> = Empty().eraseToAnyPublisher()) {
+                changes: AnyPublisher<Void, Never> = Empty().eraseToAnyPublisher(),
+                keyDown: ((NSEvent) -> Bool)? = nil, ownsKeys: @escaping () -> Bool = { false },
+                bar: AnyView? = nil) {
         self.title = title
         self.content = content
         self.refresh = refresh
         self.changes = changes
+        self.keyDown = keyDown
+        self.ownsKeys = ownsKeys
+        self.bar = bar
+    }
+}
+
+
+
+/// How big the dropdown is drawn, everything in it scaled alike (Settings' Size).
+public enum MenuSize: Int, CaseIterable, Sendable {
+    case small, standard, large, larger
+
+    public var title: String {
+        switch self {
+        case .small: "Small"
+        case .standard: "Default"
+        case .large: "Large"
+        case .larger: "Larger"
+        }
+    }
+
+    public var scale: CGFloat {
+        switch self {
+        case .small: 0.9
+        case .standard: 1
+        case .large: 1.15
+        case .larger: 1.3
+        }
+    }
+
+    private static let key = "MacPlusPlusMenuSize"
+
+    /// The size chosen, remembered across launches.
+    public static var current: MenuSize {
+        get { (UserDefaults.standard.object(forKey: key) as? Int).flatMap(MenuSize.init(rawValue:)) ?? .standard }
+        set { UserDefaults.standard.set(newValue.rawValue, forKey: key) }
     }
 }
 
@@ -88,6 +134,14 @@ final class TabbedMenuModel: ObservableObject {
     @Published private(set) var stack: [TabbedMenuPage] = []
     /// Drawn as a picture (onboarding's): nothing in it is remembered or acts.
     var picture = false
+    /// How much the dropdown is scaled by (`MenuSize`); the view lays out at 1 and the panel scales it.
+    @Published var scale: CGFloat = MenuSize.current.scale
+    /// The height of the page on top of the stack, as last laid out, so the dropdown refits as it
+    /// grows and shrinks.
+    @Published var subpageHeight: CGFloat = 0
+    /// Runs something that leaves the dropdown for a moment (a file chooser) with the dropdown out of
+    /// its way, and brings it back after; set by the controller.
+    var stepAway: (() -> Void) -> Void = { $0() }
 
     private static let selectedKey = "MacPlusPlusMenuTab"
 
@@ -108,11 +162,11 @@ final class TabbedMenuModel: ObservableObject {
         if now != banner { banner = now }
     }
 
-    /// Open the page called `name` over what shows now; one already open under it is gone back to
-    /// instead.
+    /// Open the page called `name` over what shows now, the tool's own or the app's; one already open
+    /// under it is gone back to instead.
     func open(_ name: String) {
         if let index = stack.firstIndex(where: { $0.name == name }) { back(to: index + 1); return }
-        guard let subpage = actions.page(name) else { return }
+        guard let subpage = current.subpage(name) ?? actions.page(name) else { return }
         if stack.isEmpty { current.willHide() }
         subpage.refresh()
         stack.append(TabbedMenuPage(name: name, subpage: subpage))
@@ -145,6 +199,8 @@ public final class TabbedMenuController: NSObject, NSWindowDelegate {
     private let model: TabbedMenuModel
     private weak var button: NSStatusBarButton?
     private var panel: TabbedMenuPanel?
+    /// The dropdown's view, the panel's content view.
+    private var host: NSView?
     private var monitors: [Any] = []
     private var resize: AnyCancellable?
     private var pageResize: AnyCancellable?
@@ -165,13 +221,24 @@ public final class TabbedMenuController: NSObject, NSWindowDelegate {
         button.target = self
         button.action = #selector(toggle)
         button.sendAction(on: [.leftMouseDown, .rightMouseDown])
-        for tab in tabs { tab.onClose = { [weak self] in self?.close() } }
+        for tab in tabs {
+            tab.onClose = { [weak self] in self?.close() }
+            tab.onOpenPage = { [weak self] in self?.model.open($0) }
+        }
+        model.stepAway = { [weak self] work in self?.stepAway(work) ?? work() }
         actions.fixBanner = { [weak self] in self?.close(); fix() }
         model.actions = actions
     }
 
     /// The page showing now.
     public var selectedTab: Int { model.selected }
+
+    /// Draw the dropdown at `size` from now on, refitting it if it is open.
+    public func setSize(_ size: MenuSize) {
+        MenuSize.current = size
+        model.scale = size.scale
+        refit()
+    }
 
     @objc private func toggle() {
         if panel == nil { open() } else { close() }
@@ -199,10 +266,11 @@ public final class TabbedMenuController: NSObject, NSWindowDelegate {
         guard let button, let buttonWindow = button.window else { return }
         model.refresh()
         // The view draws its own bubble; the panel around it is clear, and its shadow follows the bubble.
-        let host = NSHostingView(rootView: TabbedMenuView(model: model))
+        let host = NSHostingView(rootView: ScaledMenuView(model: model))
         let panel = TabbedMenuPanel(contentRect: NSRect(origin: .zero, size: host.fittingSize),
                                     styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         panel.contentView = host
+        self.host = host
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.hasShadow = true
@@ -223,6 +291,7 @@ public final class TabbedMenuController: NSObject, NSWindowDelegate {
         // A page changing, or another page chosen, changes the height: refit, holding the top edge
         // under the icon. Read after SwiftUI has laid the change out.
         let pages = Publishers.MergeMany(model.tabs.map(\.changes))
+            .merge(with: model.$subpageHeight.removeDuplicates().dropFirst().map { _ in () })
         let switches = model.$selected.dropFirst().map { _ in () }
         let banners = model.$banner.dropFirst().map { _ in () }
         let stack = model.$stack.dropFirst().map { [weak self] stack -> Void in
@@ -245,6 +314,7 @@ public final class TabbedMenuController: NSObject, NSWindowDelegate {
         guard let panel else { return }
         if model.stack.isEmpty { model.current.willHide() }
         self.panel = nil
+        host = nil
         resize = nil
         pageResize = nil
         // Opened again, the dropdown shows the tool's page, not a page left open over it.
@@ -261,14 +331,18 @@ public final class TabbedMenuController: NSObject, NSWindowDelegate {
     /// Centred under the icon, pulled in from a screen edge when the icon sits close to it; the nub
     /// still points at the icon.
     private func place(_ panel: NSPanel, under anchor: NSRect, on screen: NSScreen?) {
-        guard let host = panel.contentView else { return }
+        guard let host else { return }
+        // Already at the Size chosen (`ScaledMenuView`).
         let size = host.fittingSize
+        let scale = model.scale
         var x = anchor.midX - size.width / 2
         if let visible = screen?.visibleFrame {
             x = min(x, visible.maxX - size.width - Self.screenMargin)
             x = max(x, visible.minX + Self.screenMargin)
         }
-        if model.nubX != anchor.midX - x { model.nubX = anchor.midX - x }
+        // The nub is drawn in the view's own (unscaled) points.
+        let nub = (anchor.midX - x) / scale
+        if model.nubX != nub { model.nubX = nub }
         panel.setFrame(NSRect(x: x, y: anchor.minY - Self.gap - size.height, width: size.width, height: size.height),
                        display: true)
         panel.invalidateShadow()
@@ -282,16 +356,32 @@ public final class TabbedMenuController: NSObject, NSWindowDelegate {
         }) { monitors.append(global) }
         // One of our own windows. The icon's own click is left to `toggle`.
         if let local = NSEvent.addLocalMonitorForEvents(matching: clicks, handler: { [weak self] event in
-            if let self, event.window !== self.panel, event.window !== buttonWindow { self.close() }
+            if let self, !self.away, event.window !== self.panel, event.window !== buttonWindow { self.close() }
             return event
         }) { monitors.append(local) }
         if let keys = NSEvent.addLocalMonitorForEvents(matching: .keyDown, handler: { [weak self] event in
-            guard let self, self.panel != nil else { return event }
+            guard let self, self.panel != nil, !self.away else { return event }
+            if self.model.stack.last?.subpage.ownsKeys() == true { return event }
             return self.handle(event) ? nil : event
         }) { monitors.append(keys) }
     }
 
+    /// Out of the way of a file chooser, say: hidden, and not closed by the chooser taking the
+    /// keyboard or its clicks. The dropdown comes back as it was once `work` (modal) is done.
+    private var away = false
+
+    private func stepAway(_ work: () -> Void) {
+        guard let panel, !away else { return work() }
+        away = true
+        panel.orderOut(nil)
+        work()
+        away = false
+        guard self.panel === panel else { return }
+        panel.makeKeyAndOrderFront(nil)
+    }
+
     private func handle(_ key: NSEvent) -> Bool {
+        if model.stack.last?.subpage.keyDown?(key) == true { return true }
         let command = key.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command
         switch (key.keyCode, key.charactersIgnoringModifiers) {
         case (53, _):
@@ -310,8 +400,37 @@ public final class TabbedMenuController: NSObject, NSWindowDelegate {
         return true
     }
 
+
     public func windowDidResignKey(_ notification: Notification) {
-        close()
+        if !away { close() }
+    }
+}
+
+/// The dropdown at the Size chosen: laid out at its own size, then drawn (and clicked) scaled from its
+/// top-left corner, taking the scaled size.
+struct ScaledMenuView: View {
+    @ObservedObject var model: TabbedMenuModel
+
+    var body: some View {
+        ScaledLayout(scale: model.scale) {
+            TabbedMenuView(model: model).scaleEffect(model.scale, anchor: .topLeading)
+        }
+    }
+}
+
+/// Its one child at the child's own size, reporting that size times `scale`.
+private struct ScaledLayout: Layout {
+    var scale: CGFloat
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        guard let child = subviews.first else { return .zero }
+        let size = child.sizeThatFits(.unspecified)
+        return CGSize(width: (size.width * scale).rounded(), height: (size.height * scale).rounded())
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        guard let child = subviews.first else { return }
+        child.place(at: bounds.origin, anchor: .topLeading, proposal: ProposedViewSize(child.sizeThatFits(.unspecified)))
     }
 }
 
@@ -327,33 +446,49 @@ struct TabbedMenuView: View {
         static let width: CGFloat = 384
         static let edge: CGFloat = 12
         static let corner: CGFloat = 10
+        /// The band across the top (the tabs, or the navigation bar) and the gap over it: one
+        /// height for both, so its hairline stays put as the pages change.
+        static let barHeight: CGFloat = 38
+        static let barTop: CGFloat = 6
     }
 
     /// The tallest a page opened over a tool's page draws before it scrolls: the screen's height,
     /// less the navigation bar and page header (about 110 pt), the footer (about 55), the nub and a
-    /// margin.
-    private static var subpageMaxHeight: CGFloat {
-        max(300, (NSScreen.main?.visibleFrame.height ?? 800) - 220)
+    /// margin, in the view's own points at the Size chosen.
+    private var subpageMaxHeight: CGFloat {
+        max(300, ((NSScreen.main?.visibleFrame.height ?? 800) - 220) / model.scale)
     }
 
     var body: some View {
         VStack(spacing: 0) {
             if let top = model.stack.last {
-                subpageHeader(top)
-                    .padding(.horizontal, Metric.edge)
-                    .padding(.top, Metric.edge + 2)
+                topBar { subpageHeader(top) }
                 // Drawn edge to edge, as a tool's page is: each page keeps its own margin. Its own
                 // height, until that would run the dropdown off the screen; then it scrolls.
-                ScrollView { top.subpage.content }
+                ScrollView {
+                    top.subpage.content
+                        .environment(\.closePage) { model.back(to: model.stack.count - 1) }
+                        .environment(\.stepAway, model.stepAway)
+                        .background(GeometryReader { proxy in
+                            Color.clear.onChange(of: proxy.size.height, initial: true) { _, height in
+                                model.subpageHeight = height
+                            }
+                        })
+                }
                     .scrollBounceBehavior(.basedOnSize)
-                    .frame(maxHeight: Self.subpageMaxHeight)
+                    // A page's bar takes its room from the page's.
+                    .frame(maxHeight: subpageMaxHeight - (top.subpage.bar == nil ? 0 : 60))
                     .fixedSize(horizontal: false, vertical: true)
                     .id(top.id)
+                if let bar = top.subpage.bar {
+                    Divider()
+                    bar
+                        .environment(\.closePage) { model.back(to: model.stack.count - 1) }
+                        .padding(Metric.edge)
+                }
             } else {
                 if model.tabs.count > 1 {
-                    switcher
-                        .padding(.horizontal, Metric.edge)
-                        .padding(.top, Metric.edge)
+                    topBar { switcher }
                 }
                 if let banner = model.banner {
                     bannerCard(banner)
@@ -370,6 +505,18 @@ struct TabbedMenuView: View {
         .frame(width: Metric.width)
         .background(SpeechBubbleShape(nubX: model.nubX).fill(Color(nsColor: .windowBackgroundColor)))
         .overlay(SpeechBubbleShape(nubX: model.nubX).stroke(Color.primary.opacity(0.12), lineWidth: 1))
+    }
+
+    /// The band across the top of the bubble, the tabs over a tool's page or the navigation bar over
+    /// Settings and Help, its content standing on a hairline the bubble's width. Both are the same
+    /// height, so the hairline is in one place whichever shows.
+    private func topBar<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
+        content()
+            .frame(maxWidth: .infinity)
+            .frame(height: Metric.barHeight, alignment: .bottom)
+            .padding(.horizontal, Metric.edge)
+            .padding(.top, Metric.barTop)
+            .overlay(alignment: .bottom) { Divider() }
     }
 
     /// The app-wide problem, drawn as a page's warnings are: orange, with its one fix.
@@ -410,8 +557,7 @@ struct TabbedMenuView: View {
             }
         }
         .frame(height: 28)
-        .padding(.bottom, 6)
-        .overlay(alignment: .bottom) { Divider().padding(.horizontal, -Metric.edge) }
+        .padding(.bottom, 5)
     }
 
     /// The whole app's buttons, under a hairline that runs the bubble's width so they read as apart
@@ -473,8 +619,6 @@ struct TabbedMenuView: View {
                 .accessibilityAddTraits(chosen ? [.isSelected] : [])
             }
         }
-        .padding(.top, 4)
-        .overlay(alignment: .bottom) { Divider().padding(.horizontal, -Metric.edge) }
     }
 }
 

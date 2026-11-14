@@ -29,6 +29,18 @@ public struct HelpContent {
         }
     }
 
+    /// Something Help can do beside explain, such as show a file in Finder. It leaves the dropdown.
+    public struct Link: Identifiable {
+        public let title: String
+        public let action: () -> Void
+        public var id: String { title }
+
+        public init(_ title: String, action: @escaping () -> Void) {
+            self.title = title
+            self.action = action
+        }
+    }
+
     public var name: String
     /// One line under the name: what the tool does.
     public var tagline: String
@@ -37,9 +49,12 @@ public struct HelpContent {
     public var keys: [Key]
     /// A last word, such as where the tool keeps its settings.
     public var footnote: String?
+    /// Drawn above the lessons, under the last word.
+    public var links: [Link]
 
     public init(name: String, tagline: String, logo: @escaping (CGFloat) -> AnyView, topics: [Topic],
-                keys: [Key] = [], footnote: String? = nil) {
+                keys: [Key] = [], footnote: String? = nil, links: [Link] = []) {
+        self.links = links
         self.name = name
         self.tagline = tagline
         self.logo = logo
@@ -79,6 +94,7 @@ public struct HelpPane: View {
                 }
             }
             SettingsSection(footer: content.footnote) {
+                ForEach(content.links) { SettingsLink($0.title, kind: .window, action: $0.action) }
                 SettingsLink(replayTitle, kind: .window, action: onReplay)
             }
         }

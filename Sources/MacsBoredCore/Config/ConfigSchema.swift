@@ -16,7 +16,7 @@ public enum ConfigSchema {
     "enabled": {
       "type": "boolean",
       "default": true,
-      "description": "The main switch for passthrough."
+      "description": "The main switch: all of MacsBored, passthrough and triggers alike."
     },
     "openAtLogin": {
       "type": "boolean",

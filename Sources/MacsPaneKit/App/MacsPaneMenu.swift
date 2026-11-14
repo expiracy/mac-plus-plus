@@ -77,13 +77,14 @@ enum MacsPaneMenu {
             },
             .command("Draw one…", symbol: "pencil.and.outline") { [weak model] in model?.newPreset() },
         ])
-        return MenuGroup(title: "Presets", rows: rows, actions: [new],
-                               empty: "None yet. A preset puts your apps back where you like them.",
+        return MenuGroup(title: "Presets", rows: rows, add: new,
+                               empty: "None yet.",
                                move: { [weak model] in model?.movePreset(from: $0, to: $1) })
     }
 
     /// Every shortcut in one place: what it runs, drawn as its preset or its layout with the box picked
     /// out, its keys and its switch. The pencil opens it in the editor; the bin takes the shortcut away.
+    /// The + opens the "New shortcut" page.
     private static func shortcutGroup(_ model: MacsPaneModel) -> MenuGroup {
         let config = model.config
         let rows = config.shortcutList.compactMap { assigned -> MenuEntry? in
@@ -119,8 +120,11 @@ enum MacsPaneMenu {
             row.leading = glyph(boxes, icons: icons, highlighted: highlighted)
             return row
         }
-        return MenuGroup(title: "Shortcuts", rows: rows,
-                               empty: "None yet. Give a layout's box or a preset one in its editor.")
+        // Opens the "New shortcut" page: press the keys, pick a box or a preset.
+        let new = MenuEntry.command("New shortcut", symbol: "plus", key: "shortcut-new", keepsOpen: true) {
+            [weak model] in model?.onOpenPage?(NewShortcutModel.page)
+        }
+        return MenuGroup(title: "Shortcuts", rows: rows, add: new, empty: "None yet.")
     }
 
     /// Every layout, built-in and your own, alike: a pencil to change it, a bin and its switch for the
@@ -152,7 +156,7 @@ enum MacsPaneMenu {
                 [weak model] in model?.restoreBuiltInLayouts()
             },
         ]
-        return MenuGroup(title: "Layouts in the notch", rows: rows, actions: [new] + restore,
+        return MenuGroup(title: "Layouts in the notch", rows: rows, add: new, actions: restore,
                                move: { [weak model] in model?.moveLayout(from: $0, to: $1) })
     }
 }

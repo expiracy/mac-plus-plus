@@ -25,7 +25,7 @@ public struct MenuPageContent {
 }
 
 /// A titled list on a page: its rows, which scroll once there are more than fit, then the commands
-/// that always show under them ("New preset").
+/// that always show under them ("Restore built-in layouts"), and the + that makes a new row.
 public struct MenuGroup: Identifiable {
     public let title: String
     public var rows: [MenuEntry]
@@ -35,12 +35,15 @@ public struct MenuGroup: Identifiable {
     /// Set when the rows can be dragged into another order: moves the row at the first index so it
     /// ends up at the second.
     public var move: ((Int, Int) -> Void)?
+    /// Making a new row ("New preset"): the + at the end of the title, there even while it is folded.
+    public var add: MenuEntry?
     public var id: String { title }
 
-    public init(title: String, rows: [MenuEntry], actions: [MenuEntry] = [], empty: String? = nil,
-                move: ((Int, Int) -> Void)? = nil) {
+    public init(title: String, rows: [MenuEntry], add: MenuEntry? = nil, actions: [MenuEntry] = [],
+                empty: String? = nil, move: ((Int, Int) -> Void)? = nil) {
         self.title = title
         self.rows = rows
+        self.add = add
         self.actions = actions
         self.empty = empty
         self.move = move
@@ -192,7 +195,7 @@ public struct MenuPageBrand {
     public var togglesTitle: String
 
     public init(name: String, logo: @escaping (CGFloat) -> AnyView, liveTitle: String = "Now",
-                emptyLive: String? = nil, togglesTitle: String = "General") {
+                emptyLive: String? = nil, togglesTitle: String = "Settings") {
         self.name = name
         self.logo = logo
         self.liveTitle = liveTitle
@@ -211,6 +214,10 @@ public final class MenuPageModel: ObservableObject {
     @Published public var confirmingTrash: String?
     /// The row whose choices hang under it in a small bubble.
     @Published public var openSubmenu: String?
+    /// The sections folded to their title, by title; remembered for the page.
+    @Published public private(set) var collapsed: Set<String>
+    /// The empty sections opened by hand (an empty section starts folded); remembered for the page.
+    @Published public private(set) var expanded: Set<String>
     public let brand: MenuPageBrand
     /// Set by the dropdown; commands close it before they act.
     public var onClose: () -> Void = {}
@@ -219,7 +226,31 @@ public final class MenuPageModel: ObservableObject {
     public init(brand: MenuPageBrand, assemble: @escaping () -> MenuPageContent) {
         self.brand = brand
         self.assemble = assemble
+        collapsedKey = "MacPlusPlusCollapsed.\(brand.name)"
+        collapsed = Set(UserDefaults.standard.stringArray(forKey: collapsedKey) ?? [])
+        expanded = Set(UserDefaults.standard.stringArray(forKey: collapsedKey + ".open") ?? [])
         refresh()
+    }
+
+    private let collapsedKey: String
+
+    /// Whether the section called `title` shows only its title: folded by hand, or empty and not
+    /// opened by hand.
+    public func isFolded(_ title: String, isEmpty: Bool) -> Bool {
+        collapsed.contains(title) || (isEmpty && !expanded.contains(title))
+    }
+
+    /// Fold the section called `title` to its title, or open it again.
+    public func toggleCollapsed(_ title: String, isEmpty: Bool) {
+        if isFolded(title, isEmpty: isEmpty) {
+            collapsed.remove(title)
+            if isEmpty { expanded.insert(title) }
+        } else {
+            collapsed.insert(title)
+            expanded.remove(title)
+        }
+        UserDefaults.standard.set(collapsed.sorted(), forKey: collapsedKey)
+        UserDefaults.standard.set(expanded.sorted(), forKey: collapsedKey + ".open")
     }
 
     public func refresh() {
@@ -303,17 +334,26 @@ public final class MenuPageTab: MenuTab {
     public let model: MenuPageModel
     public let help: HelpContent
 
+    /// The tool's own pages, by name (`MenuTab.subpage`).
+    public var pages: (String) -> TabbedMenuSubpage? = { _ in nil }
+    public var onOpenPage: (String) -> Void = { _ in }
+
     public init(model: MenuPageModel, help: HelpContent) {
         self.model = model
         self.help = help
     }
+
+    public func subpage(_ name: String) -> TabbedMenuSubpage? { pages(name) }
 
     public var title: String { model.brand.name }
     public func icon() -> AnyView { model.brand.logo(16) }
     public func page() -> AnyView { AnyView(MenuPageView(model: model)) }
     public func refresh() { model.refresh() }
     public var changes: AnyPublisher<Void, Never> {
-        model.$content.dropFirst().map { _ in () }.eraseToAnyPublisher()
+        model.$content.dropFirst().map { _ in () }
+            .merge(with: model.$collapsed.dropFirst().map { _ in () })
+            .merge(with: model.$expanded.dropFirst().map { _ in () })
+            .eraseToAnyPublisher()
     }
 
     public var onClose: () -> Void {

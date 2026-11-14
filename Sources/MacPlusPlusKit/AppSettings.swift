@@ -6,7 +6,7 @@ import SwiftUI
 import MacsShared
 
 /// mac++'s Settings, one page of the dropdown drawn as System Settings draws a pane: which mac++
-/// this is, then mac++'s own settings (Accessibility, Open at login). Settings is for mac++ only:
+/// this is, then mac++'s own settings (Accessibility, Open at login, the menu's Size). Settings is for mac++ only:
 /// each tool's settings, its main switch among them, are on its page of the menu.
 ///
 /// What explains them is Help, a page of its own: a tool's opens from the ? beside its name on its
@@ -17,6 +17,8 @@ final class AppSettings: ObservableObject {
         /// Open a page (Help) over the page showing.
         var openPage: (String) -> Void
         var setOpenAtLogin: (Bool) -> Void
+        /// Draw the dropdown at this size.
+        var setSize: (MenuSize) -> Void
         var requestAccess: () -> Void
         /// Play the onboarding (nil) or the lessons of the tool at this index again, in the
         /// onboarding window.
@@ -30,6 +32,7 @@ final class AppSettings: ObservableObject {
     private let actions: Actions
     @Published private(set) var granted = AXIsProcessTrusted()
     @Published private(set) var openAtLogin = LoginItem.isEnabled
+    @Published private(set) var size = MenuSize.current
 
     init(tools: [HelpContent], actions: Actions) {
         self.tools = tools
@@ -70,6 +73,11 @@ final class AppSettings: ObservableObject {
     // MARK: - What Settings and Help do
 
     func open(_ page: String) { actions.openPage(page) }
+
+    func setSize(_ size: MenuSize) {
+        self.size = size
+        actions.setSize(size)
+    }
 
     func setOpenAtLogin(_ on: Bool) {
         actions.setOpenAtLogin(on)
@@ -119,7 +127,8 @@ final class AppSettings: ObservableObject {
 
 // MARK: - The page
 
-/// Settings: which mac++ this is (its ? opens mac++'s Help), Accessibility and Open at login.
+/// Settings: which mac++ this is (its ? opens mac++'s Help), Accessibility, Open at login and how big
+/// the menu is drawn.
 private struct SettingsPage: View {
     @ObservedObject var settings: AppSettings
 
@@ -129,7 +138,7 @@ private struct SettingsPage: View {
                          text: settings.version.map { "Version \($0)" } ?? "Built from source") {
                 settings.open(TabbedMenuPage.help(for: nil))
             }
-            SettingsSection(footer: "Moving windows and seeing keys both need it. One grant, in System Settings, covers both tools.") {
+            SettingsSection {
                 SettingsRow(icon: AnyView(SettingsIcon("hand.raised.fill", .blue)), "Accessibility") {
                     if settings.granted {
                         Label("On", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
@@ -138,10 +147,14 @@ private struct SettingsPage: View {
                             .buttonStyle(.borderedProminent).controlSize(.small)
                     }
                 }
-            }
-            SettingsSection(footer: "Starts mac++, and both tools, when you log in.") {
                 SettingsToggle(icon: AnyView(SettingsIcon("power", .gray)), "Open at login",
                                isOn: settings.openAtLogin) { settings.setOpenAtLogin($0) }
+                SettingsRow(icon: AnyView(SettingsIcon("textformat.size", .indigo)), "Size") {
+                    Picker("Size", selection: Binding(get: { settings.size }, set: { settings.setSize($0) })) {
+                        ForEach(MenuSize.allCases, id: \.self) { Text($0.title).tag($0) }
+                    }
+                    .pickerStyle(.segmented).controlSize(.small).labelsHidden().fixedSize()
+                }
             }
         }
         // The same margin as a tool's page.

@@ -36,6 +36,7 @@ public struct MenuPageView: View {
         /// Where a row's choices bubble puts its nub: over the row's icon, which sits 10 pt in from the
         /// row and the bubble 4 pt.
         static let submenuNubX: CGFloat = 10 + tile / 2 + 1 - 4
+        static let submenuWidth: CGFloat = 230
     }
 
     public var body: some View {
@@ -45,7 +46,7 @@ public struct MenuPageView: View {
             if !content.live.isEmpty || model.brand.emptyLive != nil { liveCard(content.live) }
             ForEach(content.warnings) { warningCard($0) }
             if !content.toggles.isEmpty {
-                TitledCard(model.brand.togglesTitle) { rows(content.toggles) }
+                section(model.brand.togglesTitle, count: content.toggles.count) { rows(content.toggles) }
             }
             ForEach(content.groups) { groupCard($0) }
         }
@@ -60,21 +61,35 @@ public struct MenuPageView: View {
     @ViewBuilder private func submenuLayer(_ anchors: [String: Anchor<CGRect>]) -> some View {
         GeometryReader { proxy in
             if let id = model.openSubmenu, let anchor = anchors[id],
-               let entry = model.content.groups.flatMap(\.actions).first(where: { $0.id == id }) {
+               let entry = model.content.groups.flatMap({ $0.actions + [$0.add].compactMap { $0 } })
+                   .first(where: { $0.id == id }) {
                 let row = proxy[anchor]
+                // From a row, the bubble lines up with its icon; from a + at a title's end, it keeps
+                // inside the page, its nub pointing at the +.
+                let x = min(row.minX + 4, proxy.size.width - Metric.submenuWidth - 4)
+                let nubX = row.width > 60 ? Metric.submenuNubX : row.midX - x
+                // Under the row, unless that would run past the foot of the page (into the dropdown's
+                // footer, or off it): then over the row, its nub pointing down at it.
+                let height = submenuHeight(entry)
+                let up = row.maxY - 6 + height > proxy.size.height && row.minY + 6 - height >= 0
                 ZStack(alignment: .topLeading) {
                     Color.clear
                         .contentShape(Rectangle())
                         .onTapGesture { withAnimation(.easeOut(duration: 0.12)) { model.openSubmenu = nil } }
-                    submenuBubble(entry)
-                        .offset(x: row.minX + 4, y: row.maxY - 6)
-                        .transition(.scale(scale: 0.85, anchor: .topLeading).combined(with: .opacity))
+                    submenuBubble(entry, up: up, nubX: nubX)
+                        .offset(x: x, y: up ? row.minY + 6 - height : row.maxY - 6)
+                        .transition(.scale(scale: 0.85, anchor: up ? .bottomLeading : .topLeading).combined(with: .opacity))
                 }
             }
         }
     }
 
-    private func submenuBubble(_ entry: MenuEntry) -> some View {
+    /// The bubble's height: its rows, its padding and its nub.
+    private func submenuHeight(_ entry: MenuEntry) -> CGFloat {
+        CGFloat(entry.submenu.count) * (Metric.row - 4) + 12 + SpeechBubbleShape.standardNub.height
+    }
+
+    private func submenuBubble(_ entry: MenuEntry, up: Bool, nubX: CGFloat) -> some View {
         VStack(spacing: 0) {
             ForEach(Array(entry.submenu.enumerated()), id: \.element.id) { index, item in
                 Button { model.run(item) } label: {
@@ -95,11 +110,11 @@ public struct MenuPageView: View {
             }
         }
         .padding(6)
-        .padding(.top, SpeechBubbleShape.standardNub.height)
-        .frame(width: 230)
-        .background(SpeechBubbleShape(nubX: Metric.submenuNubX, corner: Metric.corner)
+        .padding(up ? .bottom : .top, SpeechBubbleShape.standardNub.height)
+        .frame(width: Metric.submenuWidth)
+        .background(SpeechBubbleShape(nubX: nubX, corner: Metric.corner, pointsDown: up)
             .fill(Color(nsColor: .windowBackgroundColor)))
-        .overlay(SpeechBubbleShape(nubX: Metric.submenuNubX, corner: Metric.corner)
+        .overlay(SpeechBubbleShape(nubX: nubX, corner: Metric.corner, pointsDown: up)
             .stroke(Color.primary.opacity(0.12), lineWidth: 1))
         .compositingGroup()
         .shadow(color: .black.opacity(0.18), radius: 10, y: 4)
@@ -178,7 +193,7 @@ public struct MenuPageView: View {
     /// A titled list: its rows in a card (scrolling inside it once there are more than fit), or its
     /// empty line, then the commands that always show at the card's foot.
     private func groupCard(_ group: MenuGroup) -> some View {
-        TitledCard(group.title) {
+        section(group.title, count: group.rows.count, add: group.add) {
             if group.rows.isEmpty, let empty = group.empty {
                 Text(empty)
                     .font(.callout).foregroundStyle(.secondary)
@@ -459,6 +474,77 @@ public struct MenuPageView: View {
     }
 
     /// The system switch, wired to the entry's own action so the registry stays the one source of state.
+    // MARK: - Sections
+
+    /// A titled card of rows that folds to its title: click the title (a chevron before it) to fold
+    /// or open it. Folded, the title says how many rows it holds. An empty section starts folded.
+    @ViewBuilder
+    private func section<Rows: View>(_ title: String, count: Int, add: MenuEntry? = nil,
+                                     @ViewBuilder rows: () -> Rows) -> some View {
+        let folded = model.isFolded(title, isEmpty: count == 0)
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                sectionTitleButton(title, count: count, folded: folded)
+                Spacer(minLength: 6)
+                if let add { addButton(add, section: title, count: count, folded: folded) }
+            }
+            .padding(.horizontal, 4)
+            if !folded { card(rows) }
+        }
+    }
+
+    /// The + at the end of a section's title: it opens the section, then makes a new row (or opens
+    /// its choices, in a bubble hanging from the +).
+    @ViewBuilder
+    private func addButton(_ add: MenuEntry, section title: String, count: Int, folded: Bool) -> some View {
+        let button = Button {
+            if folded { model.toggleCollapsed(title, isEmpty: count == 0) }
+            if add.submenu.isEmpty { model.run(add) }
+            else { withAnimation(.bouncy(duration: 0.25)) { model.toggleSubmenu(add) } }
+        } label: {
+            Image(systemName: "plus").font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(Color.accentColor)
+                .frame(width: 22, height: 18)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(add.title)
+        .accessibilityLabel(add.title)
+        if add.submenu.isEmpty { button }
+        else { button.anchorPreference(key: SubmenuAnchorKey.self, value: .bounds) { [add.id: $0] } }
+    }
+
+    private func chevron(folded: Bool) -> some View {
+        Image(systemName: "chevron.right")
+            .font(.system(size: 9, weight: .bold))
+            .foregroundStyle(.secondary)
+            .rotationEffect(.degrees(folded ? 0 : 90))
+            .frame(width: 10)
+    }
+
+    private func sectionTitleButton(_ title: String, count: Int, folded: Bool) -> some View {
+        Button { model.toggleCollapsed(title, isEmpty: count == 0) } label: {
+            HStack(spacing: 4) {
+                chevron(folded: folded)
+                Text(title).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                if folded { Text("· \(count)").font(.caption).foregroundStyle(.tertiary) }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(folded ? "Show \(title)" : "Hide \(title)")
+        .accessibilityLabel(title)
+        .accessibilityValue(folded ? "Collapsed" : "Expanded")
+    }
+
+
+    private func card<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
+        VStack(spacing: 0) { content() }
+            .background(RoundedRectangle(cornerRadius: CardStyle.corner, style: .continuous).fill(CardStyle.fill))
+            .overlay(RoundedRectangle(cornerRadius: CardStyle.corner, style: .continuous).strokeBorder(CardStyle.stroke))
+            .clipShape(RoundedRectangle(cornerRadius: CardStyle.corner, style: .continuous))
+    }
+
     private func switchControl(_ entry: MenuEntry, isOn: Bool) -> some View {
         Toggle(entry.title, isOn: Binding(get: { isOn }, set: { _ in model.run(entry) }))
             .toggleStyle(.switch)

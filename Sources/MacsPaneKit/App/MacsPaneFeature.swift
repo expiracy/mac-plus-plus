@@ -26,6 +26,9 @@ public final class MacsPaneFeature {
             || DevMacsPaneSnapshot.recordOpenIfRequested(arguments: arguments)
     }
 
+    /// The names of MacsPane's own pages of the dropdown, for pictures of them.
+    public static let pages = [NewShortcutModel.page]
+
     public init() {
         if let url = try? MacsPanePaths.configURL() {
             store = MacsPaneConfigStore(url: url)
@@ -39,7 +42,12 @@ public final class MacsPaneFeature {
         let page = MenuPageModel(brand: MacsPaneMenu.brand) { [weak model] in
             model.map(MacsPaneMenu.content) ?? MenuPageContent()
         }
-        tab = MenuPageTab(model: page, help: MacsPaneHelp.content)
+        let tab = MenuPageTab(model: page, help: MacsPaneHelp.content)
+        tab.pages = { [weak model] name in
+            name == NewShortcutModel.page ? model?.newShortcutPage() : nil
+        }
+        model.onOpenPage = { [weak tab] in tab?.onOpenPage($0) }
+        self.tab = tab
         model.onEdit = { [weak self, weak model] draft in
             guard let model else { return }
             self?.editor.show(draft, app: model)
@@ -90,11 +98,11 @@ enum MacsPaneHelp {
             .init("rectangle.split.2x1", "Drag to the notch",
                   "Drag any window by its title bar to the top of the screen and hold it on the notch. Your layouts open; let go on a box and the window fills it. Hold for sets how long to wait."),
             .init("square.grid.2x2", "Layouts",
-                  "The layouts the notch offers have their switch on. Drag them into the order you want by their grips, use New layout to save the windows on screen as one or draw your own, and the pencil to change one."),
+                  "The layouts the notch offers have their switch on. Drag them into the order you want by their grips, use its + to save the windows on screen as one or draw your own, and the pencil to change one."),
             .init("square.stack.3d.up", "Presets",
-                  "A preset puts a set of apps back where you like them. New preset saves your desktop as one or draws one; click it to apply it."),
+                  "A preset puts a set of apps back where you like them. The + beside Presets saves your desktop as one or draws one; click it to apply it."),
             .init("keyboard", "Shortcuts",
-                  "Give a layout's box or a preset keys in its editor, and they work from any app. The Shortcuts list shows them all, with a switch each."),
+                  "The + beside Shortcuts opens New Shortcut: press the keys, pick a layout or a preset, and click the box on the big screen. They work from any app. The Shortcuts list shows them all, with a switch each; the pencil opens what one runs in the editor."),
             .init("arrow.uturn.backward", "Undo",
                   "After a snap or a preset, a prompt at the notch offers to put the windows back where they were."),
         ],

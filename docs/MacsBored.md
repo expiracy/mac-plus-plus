@@ -14,8 +14,8 @@ app and macOS has them back. Alongside that it runs your own shortcuts, BetterTo
 
 - **Passthrough apps.** Each names the apps it covers, when it acts, and which of macOS's shortcuts go
   to the app instead: the app switcher, Spotlight, Mission Control, Spaces, screenshots, input sources,
-  the Dock and Notification Centre, keyboard navigation, Zoom and Help search. The menu's *Now* box
-  offers to add the app in front; onboarding offers any remote-desktop app installed on first run.
+  the Dock and Notification Centre, keyboard navigation, Zoom and Help search. The + beside *Passthrough*
+  adds one; onboarding offers any remote-desktop app installed on first run.
 - **Conditions.** A passthrough or trigger can wait for any of these: the window is full screen, the
   window fills the screen, the window title contains some text, an external display is connected, the
   Mac is on battery, the time is between two times, or Caps Lock is on. Each can be turned round
@@ -30,13 +30,18 @@ app and macOS has them back. Alongside that it runs your own shortcuts, BetterTo
   those keys straight to the app in front. A trigger with no apps works everywhere except inside a
   passthrough app, whose keys belong to the session; name the passthrough app to have it work there too.
   Giving a trigger keys another trigger had takes them from it.
-- **Caps Lock is Hyper.** Caps Lock holds ⌃⌥⇧⌘, a combination no app uses, for your triggers. It is
-  remapped with `hidutil` for this login session and put back when you switch it off or quit; if another
-  tool already remaps keys, it stays off.
+- **Caps Lock as Hyper**, in the settings file only (`"capsLockAsHyper": true`). Caps Lock holds
+  ⌃⌥⇧⌘, a combination no app uses, for your triggers. It is remapped with `hidutil` for this login
+  session and put back when it is switched off or MacsBored quits; if another tool already remaps keys,
+  it stays off.
+- **Pausing.** ⌃⌥⌘P gives macOS its shortcuts back in the passthrough app in
+  front until you switch apps. The settings file can change those keys (`"pauseKeys"`), or turn them
+  off with `null`.
 
-Everything MacsBored lets you change is on its page of mac++'s menu. *New passthrough app* and *New
-trigger* (which asks: remap keys, open something, or run a Shortcut) open the editor, and the pencil on
-a row opens it on that entry. Open at login and Accessibility belong to the whole app, in mac++'s
+Everything else MacsBored lets you change is on its page of mac++'s menu, a section for each thing it
+makes: Passthrough, Key remaps, Quick opens and Shortcuts to run. The + on each title opens the
+editor on that kind, as a page of the menu itself ("New Key Remap", with Cancel and Save kept in view
+under it), and the pencil on a row opens it on that entry. Open at login and Accessibility belong to the whole app, in mac++'s
 Settings. MacsBored's Help, the ? beside its name at the top of its page, explains each part and can play its lessons again.
 
 ## The settings file
@@ -57,6 +62,8 @@ with a mistake is left alone, the last good settings keep running, and the menu 
   ]
 }
 ```
+
+`"enabled"` is MacsBored's main switch, the one beside its name: off, every key goes through untouched.
 
 Keys are text (`ctrl+opt+cmd+P`, `hyper+N`, `cmd+space`; the menu's `⌃⌥⌘P` works too), and a trigger
 can have several as a list (`"keys": ["cmd+space", "cmd+tab"]`), any of which sets it off. Apps are bundle

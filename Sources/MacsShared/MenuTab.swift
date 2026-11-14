@@ -25,5 +25,10 @@ public protocol MenuTab: AnyObject {
     func willHide()
     /// The tool's Help, opened by the ? beside its name: how it works and its keys.
     var help: HelpContent { get }
+    /// A page of the tool's own that the dropdown opens over its page in the same space ("New
+    /// shortcut"), by name; nil for a name it doesn't know.
+    func subpage(_ name: String) -> TabbedMenuSubpage?
+    /// Set by the dropdown: the page calls it to open one of its `subpage`s.
+    var onOpenPage: (String) -> Void { get set }
 }
 #endif

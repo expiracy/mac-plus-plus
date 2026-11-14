@@ -130,18 +130,13 @@ struct MacsBoredSetupView: View {
             Text(part.picked.count == 1 ? "1 app gets the shortcuts" : "\(part.picked.count) apps get the shortcuts")
                 .font(.callout).foregroundStyle(.secondary)
             if installed.isEmpty {
-                Text("No remote-desktop app is installed yet. Add one later with New passthrough app in the menu bar.")
+                Text("No remote-desktop app is installed yet. Add one later with the + beside Passthrough in the menu bar.")
                     .font(.callout).foregroundStyle(.secondary)
             }
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 14)], spacing: 14) {
                 ForEach(installed) { app in appCard(app, on: part.picked.contains(app.bundleID)) }
             }
             Spacer(minLength: 0)
-            SettingCard(symbol: "capslock", title: "Caps Lock as Hyper",
-                        detail: "Caps Lock holds ⌃⌥⇧⌘, a modifier no app uses, for triggers of your own.") {
-                Toggle("Caps Lock as Hyper", isOn: Binding(get: { model.config.hyperKeyEnabled }, set: { model.setHyperKey($0) }))
-                    .labelsHidden()
-            }
         }
         .padding(.bottom, 16)
     }

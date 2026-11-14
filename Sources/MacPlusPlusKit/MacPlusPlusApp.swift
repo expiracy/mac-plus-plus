@@ -15,8 +15,9 @@ import MacsShared
 ///   --open-onboarding [macspane|macsbored]   Open onboarding, at that tool's lessons.
 ///   --open-settings          Open the dropdown on mac++'s Settings.
 ///   --open-help [macspane|macsbored]   Open the dropdown on that tool's Help, or on mac++'s.
+///   --open-new-shortcut      Open the dropdown on MacsPane's New Shortcut page.
 ///   --open-editor macspane | remap|open|shortcut|passthrough   Open MacsPane's box editor, or
-///                            MacsBored's editor on a new entry of that kind.
+///                            the dropdown on MacsBored's editor, on a new entry of that kind.
 ///   --snapshot-menu <dir>    Write the dropdown's pages, their Help, Settings and mac++'s Help as PNGs, then quit.
 ///   --snapshot-windows <dir> Write every onboarding step as PNGs, then quit.
 ///   --export-icon <dir>      Write the app icon's faces and marks layer (for scripts/make_icon.sh).
@@ -95,9 +96,7 @@ final class MacPlusPlusAppDelegate: NSObject, NSApplicationDelegate {
             page: { [weak self] in self?.settings.page($0) },
             quit: { NSApp.terminate(nil) },
             banner: { AXIsProcessTrusted() ? nil
-                : TabbedMenuBanner(title: "mac++ needs Accessibility",
-                                   detail: "To move windows and see keys. One grant covers both tools.",
-                                   actionTitle: "Grant") },
+                : TabbedMenuBanner(title: "mac++ needs Accessibility", actionTitle: "Grant") },
             fixBanner: { [weak self] in self?.requestAccess() })
         menu = TabbedMenuController(button: button, tabs: tabs, actions: actions)
     }
@@ -132,6 +131,7 @@ final class MacPlusPlusAppDelegate: NSObject, NSApplicationDelegate {
             actions: .init(
                 openPage: { [weak self] in self?.menu?.openPage($0) },
                 setOpenAtLogin: { [weak self] in self?.bored.setOpenAtLogin($0) },
+                setSize: { [weak self] in self?.menu?.setSize($0) },
                 requestAccess: { [weak self] in self?.requestAccess() },
                 replay: { [weak self] in self?.showOnboarding(at: $0.flatMap(Page.init(rawValue:))) },
                 close: { [weak self] in self?.menu?.close() }))
@@ -185,14 +185,21 @@ final class MacPlusPlusAppDelegate: NSObject, NSApplicationDelegate {
                 menu?.showSettings(TabbedMenuPage.help(for: nil))
             }
         }
+        if arguments.contains("--open-new-shortcut") {
+            menu?.show(tab: Page.macsPane.rawValue)
+            menu?.openPage(MacsPaneFeature.pages[0])
+        }
         switch value(after: "--open-editor") {
         case nil: break
         case "macspane": pane.openEditor()
-        case let kind?: bored.openEditor(kind)
+        case let kind?:
+            menu?.show(tab: Page.macsBored.rawValue)
+            bored.openEditor(kind)
         }
         if let directory = value(after: "--snapshot-menu") {
             TabbedMenuSnapshot.write(tabs: tabs, pages: { [weak self] in self?.settings.page($0) },
-                                     fromSettings: [TabbedMenuPage.help(for: nil)], into: URL(fileURLWithPath: directory))
+                                     fromSettings: [TabbedMenuPage.help(for: nil)], toolPages: MacsPaneFeature.pages + MacsBoredFeature.pages,
+                                     into: URL(fileURLWithPath: directory))
             NSApp.terminate(nil)
         }
         if let directory = value(after: "--snapshot-windows") {
