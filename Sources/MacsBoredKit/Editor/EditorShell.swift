@@ -1,93 +1,79 @@
 #if canImport(AppKit)
+import MacsShared
 import AppKit
 import SwiftUI
 import MacsBoredCore
 
-/// One editor window at a time, opened from a row's pencil or the menu's New.
-@MainActor
-final class EditorWindowController: NSObject, NSWindowDelegate {
-    private var window: NSWindow?
-    var onClose: () -> Void = {}
-
-    /// A window of `size`, or, with `fitsContent`, one that takes the content's own size and follows it
-    /// as it grows and shrinks.
-    func show<Content: View>(title: String, size: CGSize, fitsContent: Bool = false, @ViewBuilder content: () -> Content) {
-        close()
-        let window = NSWindow(contentRect: NSRect(origin: .zero, size: size),
-                              styleMask: [.titled, .closable, .miniaturizable, .fullSizeContentView],
-                              backing: .buffered, defer: false)
-        window.title = title
-        window.titleVisibility = .hidden
-        window.titlebarAppearsTransparent = true
-        window.isReleasedWhenClosed = false
-        let host = NSHostingController(rootView: content())
-        if fitsContent {
-            host.sizingOptions = [.preferredContentSize]
-            // The content draws its own title row under the window's buttons, so the window's size is
-            // exactly the content's, with no room kept for a title bar.
-            host.safeAreaRegions = []
-        }
-        window.contentViewController = host
-        if !fitsContent { window.setContentSize(size) }
-        window.center()
-        window.delegate = self
-        self.window = window
-        NSApp.activate(ignoringOtherApps: true)
-        window.makeKeyAndOrderFront(nil)
-    }
-
-    func close() {
-        guard let window else { return }
-        self.window = nil
-        window.delegate = nil
-        window.close()
-        onClose()
-    }
-
-    func windowWillClose(_ notification: Notification) {
-        window = nil
-        onClose()
-    }
-}
-
 // MARK: - Form pieces, one look for every page
 
-/// The editor's sizes, set to MacsPane's editor: large controls on 44-point rows.
+/// The editor's sizes, to fit the dropdown's width: a label column, then a field, on the menu's rows.
 enum FormMetric {
-    static let label: CGFloat = 120
-    static let field: CGFloat = 300
-    static let row: CGFloat = 44
+    static let label: CGFloat = 84
+    static let field: CGFloat = 232
+    static let row: CGFloat = 38
 }
 
-/// A titled group of rows on a white panel, with a quiet line under it.
+/// A titled group of rows on a card, drawn as the rest of the dropdown draws its sections: the same
+/// heading, card and hairlines. A long group can fold to its heading as the menu's sections do (a
+/// chevron before it, and `summary` beside it while folded).
 struct FormGroup<Content: View>: View {
+    enum Folding { case never, open, folded }
+
     var title: String?
-    var caption: String?
-    var trailing: AnyView?
+    var caption: String? = nil
+    var trailing: AnyView? = nil
+    var folding: Folding = .never
+    var summary: String? = nil
     @ViewBuilder var content: Content
+    @State private var foldedNow: Bool?
+
+    private var folded: Bool { foldedNow ?? (folding == .folded) }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 6) {
             if let title {
                 HStack(alignment: .firstTextBaseline) {
-                    Text(title).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-                        .accessibilityAddTraits(.isHeader)
+                    if folding == .never {
+                        Text(title).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                            .accessibilityAddTraits(.isHeader)
+                    } else {
+                        foldButton(title)
+                    }
                     Spacer()
-                    trailing
+                    if !folded { trailing }
                 }
-                .padding(.horizontal, 10)
+                .padding(.horizontal, 4)
             }
-            VStack(spacing: 0) { content }
-                .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color(nsColor: .controlBackgroundColor)))
-                .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .strokeBorder(Color(nsColor: .separatorColor), lineWidth: 0.5))
-            if let caption, !caption.isEmpty {
-                Text(caption).font(.callout).foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.horizontal, 10)
-                    .padding(.top, 2)
+            if !folded {
+                VStack(spacing: 0) { content }
+                    .background(RoundedRectangle(cornerRadius: CardStyle.corner, style: .continuous).fill(CardStyle.fill))
+                    .overlay(RoundedRectangle(cornerRadius: CardStyle.corner, style: .continuous).strokeBorder(CardStyle.stroke))
+                    .clipShape(RoundedRectangle(cornerRadius: CardStyle.corner, style: .continuous))
+                if let caption, !caption.isEmpty {
+                    Text(caption).font(.caption).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.horizontal, 4)
+                }
             }
         }
+    }
+
+    private func foldButton(_ title: String) -> some View {
+        Button { foldedNow = !folded } label: {
+            HStack(spacing: 4) {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 9, weight: .bold))
+                    .rotationEffect(.degrees(folded ? 0 : 90))
+                    .frame(width: 10)
+                Text(title).font(.caption.weight(.semibold))
+                if folded, let summary { Text("· \(summary)").font(.caption) }
+            }
+            .foregroundStyle(.secondary)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(.isHeader)
+        .accessibilityValue(folded ? "Collapsed" : "Expanded")
     }
 }
 
@@ -106,10 +92,10 @@ struct FormRow<Content: View>: View {
             }
             content
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
         .frame(maxWidth: .infinity, minHeight: FormMetric.row, alignment: .leading)
-        .overlay(alignment: .top) { if divider { Divider() } }
+        .overlay(alignment: .top) { if divider { Divider().padding(.leading, 10) } }
     }
 }
 
@@ -280,6 +266,8 @@ struct AppChips: View {
     @Binding var apps: [AppRef]
     let suggestions: [AppRef]
     var suggestionsTitle = "Suggested"
+    /// Runs the app chooser with the dropdown out of its way.
+    var stepAway: (() -> Void) -> Void = { $0() }
 
     var body: some View {
         FlowLayout {
@@ -306,38 +294,29 @@ struct AppChips: View {
                     Section(suggestionsTitle) { ForEach(available) { app in Button(AppIcons.name(app)) { apps.append(app) } } }
                 }
                 Divider()
-                Button("Choose an app…") { AppChooser.choose { app in if !apps.contains(app) { apps.append(app) } } }
+                Button("Choose an app…") {
+                    stepAway { AppChooser.choose { app in if !apps.contains(app) { apps.append(app) } } }
+                }
             } label: {
                 Label("Add App", systemImage: "plus")
             }
+            .menuStyle(.button).buttonStyle(.borderless).menuIndicator(.hidden)
+            .foregroundStyle(Color.accentColor)
             .fixedSize()
+            .frame(height: 28)
         }
     }
 }
 
-/// Only-if and unless conditions, any number, combined by all or any. With none, one row says when
-/// it works instead; Add Condition always sits at the end of the last row.
+/// Only-if and unless conditions, any number, combined by all or any.
 struct ConditionRows: View {
     @Binding var conditions: ConditionSet
-    /// What the one row says while there are no conditions ("Always").
-    var empty: String
 
     var body: some View {
         ForEach(Array(conditions.conditions.enumerated()), id: \.element.id) { index, condition in
             FormRow(divider: index > 0) { row(index: index, condition: condition) }
         }
         FormRow(divider: !conditions.conditions.isEmpty) {
-            if conditions.conditions.isEmpty {
-                Text(empty).foregroundStyle(.secondary)
-            } else if conditions.conditions.count > 1 {
-                Text("Match").foregroundStyle(.secondary)
-                Picker("Match", selection: $conditions.match) {
-                    Text("All").tag(ConditionMatch.all)
-                    Text("Any").tag(ConditionMatch.any)
-                }
-                .pickerStyle(.segmented).labelsHidden().fixedSize()
-            }
-            Spacer()
             Menu {
                 ForEach(Array(Condition.Kind.templates.enumerated()), id: \.offset) { _, kind in
                     Button { conditions.conditions.append(Condition(kind)) } label: { Label(kind.title, systemImage: kind.symbol) }
@@ -345,7 +324,18 @@ struct ConditionRows: View {
             } label: {
                 Label("Add Condition", systemImage: "plus")
             }
+            .menuStyle(.button).buttonStyle(.borderless).menuIndicator(.hidden)
+            .foregroundStyle(Color.accentColor)
             .fixedSize()
+            Spacer()
+            if conditions.conditions.count > 1 {
+                Text("Match").font(.caption).foregroundStyle(.secondary)
+                Picker("Match", selection: $conditions.match) {
+                    Text("All").tag(ConditionMatch.all)
+                    Text("Any").tag(ConditionMatch.any)
+                }
+                .pickerStyle(.segmented).controlSize(.small).labelsHidden().fixedSize()
+            }
         }
     }
 
@@ -353,21 +343,23 @@ struct ConditionRows: View {
         let binding = Binding<Condition>(
             get: { conditions.conditions.indices.contains(index) ? conditions.conditions[index] : condition },
             set: { if conditions.conditions.indices.contains(index) { conditions.conditions[index] = $0 } })
-        return HStack(spacing: 8) {
-            Picker("", selection: binding.negated) {
-                Text("Only if").tag(false)
-                Text("Unless").tag(true)
+        return VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                Picker("", selection: binding.negated) {
+                    Text("Only if").tag(false)
+                    Text("Unless").tag(true)
+                }
+                .pickerStyle(.segmented).controlSize(.small).labelsHidden().fixedSize()
+                Text(condition.kind.title.lowercased()).lineLimit(1).truncationMode(.tail)
+                Spacer(minLength: 4)
+                Button { conditions.conditions.removeAll { $0.id == condition.id } } label: {
+                    Image(systemName: "xmark").font(.system(size: 10, weight: .bold)).foregroundStyle(.secondary)
+                        .frame(width: 20, height: 20).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help("Remove this condition")
             }
-            .pickerStyle(.segmented).labelsHidden().fixedSize()
-            Text(condition.kind.title.lowercased()).lineLimit(1)
             parameter(binding)
-            Spacer(minLength: 4)
-            Button { conditions.conditions.removeAll { $0.id == condition.id } } label: {
-                Image(systemName: "xmark").font(.system(size: 10, weight: .bold)).foregroundStyle(.secondary)
-                    .frame(width: 20, height: 20).contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .help("Remove this condition")
         }
     }
 
@@ -376,7 +368,7 @@ struct ConditionRows: View {
         case let .windowTitleContains(text):
             TextField("Text", text: Binding(get: { text }, set: { condition.wrappedValue.kind = .windowTitleContains($0) }))
                 .textFieldStyle(.roundedBorder)
-                .frame(width: 180)
+                .frame(maxWidth: .infinity)
         case let .timeBetween(start, end):
             HStack(spacing: 4) {
                 timePicker(start) { condition.wrappedValue.kind = .timeBetween(start: $0, end: end) }

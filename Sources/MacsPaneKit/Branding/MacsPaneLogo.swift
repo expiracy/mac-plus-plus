@@ -1,15 +1,14 @@
 #if canImport(AppKit)
+import MacsShared
 import AppKit
 import SwiftUI
 
-/// MacsPane's two marks, drawn in code so the icon file, the menu bar, the dropdown, setup and the
-/// grant card share one source.
+/// MacsPane's mark, drawn in code so its page of the dropdown, its Help and onboarding share one
+/// source (mac++'s own icon is `MacPlusPlusLogo`).
 ///
-/// - `MacsPaneLogo` is the app icon: a slate tile with the notch hanging from its top edge, a window
+/// - `MacsPaneLogo` is the tool's tile: a slate tile with the notch hanging from its top edge, a window
 ///   snapped into the left half in blue and its neighbour outlined. It has a dark (slate) face and a
 ///   light face, and follows the colour scheme unless told which to wear.
-/// - `MacsPaneGlyph` is the one-colour mark: a display outline, its notch, a filled left pane and an
-///   outlined right one. The menu bar wears it as a template image.
 ///
 /// Geometry is in units of the tile (1 = its side).
 struct MacsPaneLogo: View {
@@ -69,61 +68,4 @@ struct MacsPaneLogo: View {
     }
 }
 
-/// MacsPane's one-colour mark. Drawn in the current foreground style, so it tints like an SF Symbol.
-struct MacsPaneGlyph: View {
-    var body: some View {
-        Canvas { context, size in
-            let shapes = MacsPaneGlyph.shapes(in: CGRect(origin: .zero, size: size))
-            context.stroke(shapes.outline, with: .foreground, lineWidth: shapes.lineWidth)
-            context.fill(shapes.notch, with: .foreground)
-            context.fill(shapes.filledPane, with: .foreground)
-            context.stroke(shapes.openPane, with: .foreground, lineWidth: shapes.lineWidth * 0.75)
-        }
-        .accessibilityLabel("MacsPane")
-    }
-
-    /// The glyph's parts on a 100-unit grid: display outline, notch, the snapped pane, the waiting pane.
-    struct Shapes {
-        let outline: Path
-        let notch: Path
-        let filledPane: Path
-        let openPane: Path
-        let lineWidth: CGFloat
-    }
-
-    static func shapes(in rect: CGRect) -> Shapes {
-        let u = min(rect.width, rect.height) / 100
-        let origin = CGPoint(x: rect.midX - 50 * u, y: rect.midY - 50 * u)
-        func box(_ x: CGFloat, _ y: CGFloat, _ w: CGFloat, _ h: CGFloat) -> CGRect {
-            CGRect(x: origin.x + x * u, y: origin.y + y * u, width: w * u, height: h * u)
-        }
-        let frame = box(8, 14, 84, 72)
-        let notch = NotchMarkShape(width: 30.0 / 84, height: 13.0 / 84, flare: 3.0 / 84, radius: 5.0 / 84).path(in: frame)
-        return Shapes(outline: Path(roundedRect: frame, cornerRadius: 15 * u, style: .continuous),
-                      notch: notch,
-                      filledPane: Path(roundedRect: box(22, 38, 25, 36), cornerRadius: 4 * u, style: .continuous),
-                      openPane: Path(roundedRect: box(57, 41, 19, 30), cornerRadius: 3 * u, style: .continuous),
-                      lineWidth: 8 * u)
-    }
-
-    /// The menu bar's template image.
-    static func templateImage(pointSize: CGFloat = 18) -> NSImage {
-        let image = NSImage(size: NSSize(width: pointSize, height: pointSize), flipped: true) { rect in
-            guard let context = NSGraphicsContext.current?.cgContext else { return false }
-            let shapes = MacsPaneGlyph.shapes(in: rect)
-            context.setStrokeColor(NSColor.black.cgColor)
-            context.setFillColor(NSColor.black.cgColor)
-            context.setLineWidth(shapes.lineWidth)
-            context.addPath(shapes.outline.cgPath); context.strokePath()
-            context.addPath(shapes.notch.cgPath); context.fillPath()
-            context.addPath(shapes.filledPane.cgPath); context.fillPath()
-            context.setLineWidth(shapes.lineWidth * 0.75)
-            context.addPath(shapes.openPane.cgPath); context.strokePath()
-            return true
-        }
-        image.isTemplate = true
-        image.accessibilityDescription = "MacsPane"
-        return image
-    }
-}
 #endif

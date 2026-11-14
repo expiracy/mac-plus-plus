@@ -40,14 +40,6 @@ enum HyperKeyMapping {
     }
 }
 
-enum LoginItem {
-    static var isEnabled: Bool { SMAppService.mainApp.status == .enabled }
-
-    static func setEnabled(_ on: Bool) {
-        if on { try? SMAppService.mainApp.register() } else { try? SMAppService.mainApp.unregister() }
-    }
-}
-
 enum Accessibility {
     static var isTrusted: Bool { AXIsProcessTrusted() }
 

@@ -46,7 +46,7 @@ final class ConfigFileTests: XCTestCase {
         let reading = read(sample)
         XCTAssertEqual(reading.issues, [])
         let config = try XCTUnwrap(reading.config)
-        XCTAssertTrue(config.passthroughEnabled)
+        XCTAssertTrue(config.isEnabled)
         XCTAssertEqual(config.openAtLogin, true)
         XCTAssertEqual(config.pauseKeys, KeyCombo(text: "ctrl+opt+cmd+P"))
         XCTAssertFalse(config.hyperKeyEnabled)
@@ -78,7 +78,7 @@ final class ConfigFileTests: XCTestCase {
 
     func testAnEmptyObjectIsTheDefaults() throws {
         let config = try XCTUnwrap(read("{}").config)
-        XCTAssertTrue(config.passthroughEnabled)
+        XCTAssertTrue(config.isEnabled)
         XCTAssertNil(config.openAtLogin)
         XCTAssertEqual(config.pauseKeys, MacsBoredConfig.defaultPauseKeys)
         XCTAssertEqual(config.profiles, [])

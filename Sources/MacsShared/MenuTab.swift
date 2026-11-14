@@ -2,9 +2,9 @@
 import Combine
 import SwiftUI
 
-/// One app's page in mac++'s menu-bar dropdown (`TabbedMenuController`). The dropdown draws the
-/// bubble and the switcher along its top; the page draws everything under that, from its own name
-/// and main switch down to its footer.
+/// One tool's page in mac++'s menu-bar dropdown (`TabbedMenuController`). The dropdown draws the
+/// bubble, the switcher along its top and the app's footer; the page draws everything between, from
+/// its own name and main switch down. `MenuPageTab` is the one every tool uses.
 public protocol MenuTab: AnyObject {
     /// The page's name in the switcher.
     var title: String { get }
@@ -23,5 +23,12 @@ public protocol MenuTab: AnyObject {
     func escape() -> Bool
     /// The dropdown is closing, or switching to another page.
     func willHide()
+    /// The tool's Help, opened by the ? beside its name: how it works and its keys.
+    var help: HelpContent { get }
+    /// A page of the tool's own that the dropdown opens over its page in the same space ("New
+    /// shortcut"), by name; nil for a name it doesn't know.
+    func subpage(_ name: String) -> TabbedMenuSubpage?
+    /// Set by the dropdown: the page calls it to open one of its `subpage`s.
+    var onOpenPage: (String) -> Void { get set }
 }
 #endif

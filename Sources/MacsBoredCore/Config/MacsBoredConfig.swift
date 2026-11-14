@@ -3,8 +3,8 @@ import Foundation
 /// Everything MacsBored keeps: the passthrough entries, your triggers and the general switches.
 /// It lives in `config.json` (see `ConfigFile` for the format).
 public struct MacsBoredConfig: Equatable, Sendable {
-    /// The main switch: passthrough as a whole.
-    public var passthroughEnabled = true
+    /// The main switch: all of MacsBored, passthrough and triggers alike.
+    public var isEnabled = true
     /// Whether MacsBored opens at login; nil leaves it as macOS has it.
     public var openAtLogin: Bool?
     public var profiles: [PassthroughProfile] = []

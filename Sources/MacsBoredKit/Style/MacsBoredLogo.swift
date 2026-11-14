@@ -82,22 +82,4 @@ struct MacsBoredLogo: View {
     }
 }
 
-/// The menu-bar icon: a ⌘ key, filled while passthrough is handing keys to an app, outlined while
-/// macOS keeps them, and slashed while paused or switched off.
-enum MenuBarGlyph {
-    enum State { case idle, passing, off }
-
-    static func image(_ state: State) -> NSImage? {
-        let name: String
-        switch state {
-        case .idle: name = "command.square"
-        case .passing: name = "command.square.fill"
-        case .off: name = "keyboard.badge.ellipsis"
-        }
-        let image = NSImage(systemSymbolName: name, accessibilityDescription: "MacsBored")?
-            .withSymbolConfiguration(.init(pointSize: 15, weight: .regular))
-        image?.isTemplate = true
-        return image
-    }
-}
 #endif

@@ -1,4 +1,5 @@
 #if canImport(AppKit)
+import MacsShared
 import SwiftUI
 import MacsPaneCore
 
@@ -277,20 +278,20 @@ private struct FirstRunSnapPractice: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            SetupIntroRow(text: "Drag a sample window to the notch.")
+            LessonIntro(text: "Drag a sample window to the notch.")
             SetupDesktop(height: SetupStage.height, showsMenuItems: host.stage == .rest) {
                 GeometryReader { geo in SetupNotchStage(driver: driver, size: geo.size) }
             }
             .overlay(alignment: .bottomTrailing) { SetupPutBackButton(lesson: lesson, hidden: driver.dragging != nil) }
             .animation(.easeOut(duration: 0.15), value: lesson.windows == WindowsLessonModel.scattered)
             HStack(alignment: .top, spacing: 18) {
-                SetupLessonStep(title: "Drag a window up and hold it on the notch",
+                LessonStep(title: "Drag a window up and hold it on the notch",
                                 detail: "The notch widens to show where. Hold still there and the layouts open.",
                                 done: lesson.progress.contains(.pickerOpened))
-                SetupLessonStep(title: "Aim at a box or a preset",
+                LessonStep(title: "Aim at a box or a preset",
                                 detail: "Suggested is on the left, your Presets on the right. A ghost shows where each window lands.",
                                 done: lesson.progress.contains(.aimed))
-                SetupLessonStep(title: "Let go to snap it",
+                LessonStep(title: "Let go to snap it",
                                 detail: "Letting go anywhere else leaves it where you put it.",
                                 done: lesson.progress.contains(.snapped))
             }
@@ -303,7 +304,7 @@ private struct FirstRunSnapPractice: View {
     /// The drag's settings, apart from the lesson: how long to hold, the same choice as the menu's
     /// Hold for, here where you feel it.
     private var dragSettings: some View {
-        SetupSettingCard(symbol: "timer", section: "Drag", title: "Hold time",
+        SettingCard(symbol: "timer", section: "Drag", title: "Hold time",
                          detail: "How long a window rests on the notch before your layouts open.") {
             Picker("Hold time", selection: $dwellIndex) {
                 ForEach(MacsPaneConfig.dwellChoices.indices, id: \.self) { index in

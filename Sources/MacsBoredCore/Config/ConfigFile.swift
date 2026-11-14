@@ -176,7 +176,7 @@ private struct Reader {
 
     mutating func config(_ node: JSONNode) -> MacsBoredConfig {
         var config = MacsBoredConfig()
-        config.passthroughEnabled = bool(node, "enabled", default: true)
+        config.isEnabled = bool(node, "enabled", default: true)
         if let field = node["openAtLogin"], !field.isNull {
             if let on = field.bool { config.openAtLogin = on } else { error(field, "“openAtLogin” should be true or false.") }
         }
@@ -368,7 +368,7 @@ enum Writer {
     static func value(_ config: MacsBoredConfig) -> JSONValue {
         var members: [(String, JSONValue)] = [
             ("$schema", .string("./" + ConfigFile.schemaName)),
-            ("enabled", .bool(config.passthroughEnabled)),
+            ("enabled", .bool(config.isEnabled)),
         ]
         if let login = config.openAtLogin { members.append(("openAtLogin", .bool(login))) }
         members.append(("pauseKeys", config.pauseKeys.map { .string($0.text) } ?? .null))
@@ -442,7 +442,7 @@ enum LegacyConfig {
 
     static func convert(_ node: JSONNode, issues: inout [ConfigFile.Issue]) -> MacsBoredConfig {
         var config = MacsBoredConfig()
-        config.passthroughEnabled = node["passthroughEnabled"]?.bool ?? true
+        config.isEnabled = node["passthroughEnabled"]?.bool ?? true
         config.hyperKeyEnabled = node["hyperKeyEnabled"]?.bool ?? false
         config.setupCompleted = node["setupCompleted"]?.bool ?? false
         if let field = node["pauseKeys"] { config.pauseKeys = field.isNull ? nil : keys(field) ?? MacsBoredConfig.defaultPauseKeys }
