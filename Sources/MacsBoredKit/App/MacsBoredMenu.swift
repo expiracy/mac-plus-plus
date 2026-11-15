@@ -11,7 +11,8 @@ import MacsBoredCore
 /// belong to the whole app (the dropdown's banner and Settings).
 @MainActor
 enum MacsBoredMenu {
-    static let brand = MenuPageBrand(name: "MacsBored", logo: { AnyView(MacsBoredLogo(size: $0)) })
+    static let brand = MenuPageBrand(name: "MacsBored", logo: { AnyView(MacsBoredLogo(size: $0)) },
+                                     symbol: "keyboard", feature: "Keyboard")
 
     static func content(_ model: MacsBoredModel) -> MenuPageContent {
         var content = MenuPageContent()

@@ -144,7 +144,8 @@ private struct SettingsPage: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            SettingsHero(icon: AnyView(MacPlusPlusLogo(size: 48)), title: "mac++",
+            SettingsHero(icon: AnyView(MacPlusPlusGlyph(filled: true).frame(width: 40, height: 40)
+                                           .foregroundStyle(.primary)), title: "mac++",
                          text: settings.version.map { "Version \($0)" } ?? "Built from source") {
                 settings.open(TabbedMenuPage.help(for: nil))
             }

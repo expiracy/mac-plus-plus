@@ -32,6 +32,10 @@ public struct MenuPageView: View {
     enum Metric {
         static let edge: CGFloat = 12
         static let row: CGFloat = 38
+        /// Each row is a card of its own, this far from the next.
+        static let gap: CGFloat = 6
+        static let pitch: CGFloat = row + gap
+        static let rowCorner: CGFloat = 10
         static let corner: CGFloat = CardStyle.corner
         static let tile: CGFloat = 24
         /// A list taller than this many rows scrolls; the half row peeking out says there is more.
@@ -44,14 +48,16 @@ public struct MenuPageView: View {
 
     public var body: some View {
         let content = model.content
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 16) {
             header(content)
             if !content.live.isEmpty || model.brand.emptyLive != nil { liveCard(content.live) }
             ForEach(content.warnings) { warningCard($0) }
             ForEach(content.groups) { groupCard($0) }
             // Set once and left: under the lists, which are what the page is opened for.
             if !content.toggles.isEmpty {
-                section(model.brand.togglesTitle, count: content.toggles.count) { rows(content.toggles) }
+                section(model.brand.togglesTitle, count: content.toggles.count, tally: tally(content.toggles)) {
+                    rows(content.toggles)
+                }
             }
         }
         .padding(Metric.edge)
@@ -128,20 +134,45 @@ public struct MenuPageView: View {
 
     // MARK: - Bands
 
-    /// The tool's name and mark with what it is doing, its Help and its main switch. Under the
-    /// dropdown's switcher, which shows the name and mark already, only what it is doing.
-    /// The tool's mark and name with what it is doing, its Help, and its main switch.
+    /// The tool's card under the switcher: what it is for ("Windows") with its Help, what it is
+    /// doing under that (or that it is off), and its power button: On in the accent, or Off.
     private func header(_ content: MenuPageContent) -> some View {
-        PageHeader(logo: model.brand.logo(32), title: model.brand.name,
-                   line: content.liveFact ?? content.primary?.title, help: openHelp) {
-            mainSwitch(content)
+        let primary = content.primary
+        let isOn: Bool? = {
+            if let primary, case let .toggle(isOn, _, _) = primary.kind { return isOn }
+            return nil
+        }()
+        let name = model.brand.feature ?? model.brand.name
+        let line = content.liveFact ?? primary?.title
+        let shape = RoundedRectangle(cornerRadius: Metric.rowCorner, style: .continuous)
+        return HStack(spacing: 10) {
+            VStack(alignment: .leading, spacing: 1) {
+                HStack(spacing: 5) {
+                    Text(name).font(.system(size: 15, weight: .semibold))
+                        .accessibilityAddTraits(.isHeader)
+                    if let openHelp { HelpButton(subject: model.brand.name, action: openHelp) }
+                }
+                if isOn == false {
+                    Text("Off — turn on to use it").font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                } else if let line, line != model.brand.name {
+                    Text(line).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                }
+            }
+            Spacer(minLength: 4)
+            if let primary, let isOn { PowerButton(name: name, isOn: isOn) { model.run(primary) } }
         }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 9)
+        .background(shape.fill(CardStyle.fill))
+        .overlay(shape.strokeBorder(CardStyle.stroke))
     }
 
-    @ViewBuilder private func mainSwitch(_ content: MenuPageContent) -> some View {
-        if let primary = content.primary, case let .toggle(isOn, _, _) = primary.kind {
-            switchControl(primary, isOn: isOn)
-        }
+    /// What a section's title counts: how many of its switches are on, out of how many ("4/7"), or
+    /// how many rows it has when they have no switches.
+    private func tally(_ entries: [MenuEntry]) -> String? {
+        guard !entries.isEmpty else { return nil }
+        let switches = entries.compactMap(\.switchedOn)
+        return switches.isEmpty ? "\(entries.count)" : "\(switches.filter { $0 }.count)/\(switches.count)"
     }
 
     /// What is happening now: its icon (an app's own, when it is about an app), what and one fact,
@@ -204,17 +235,26 @@ public struct MenuPageView: View {
     /// A titled list: its rows in a card (scrolling inside it once there are more than fit), or its
     /// empty line, then the commands that always show at the card's foot.
     private func groupCard(_ group: MenuGroup) -> some View {
-        section(group.title, count: group.rows.count, add: group.add) {
+        section(group.title, count: group.rows.count, tally: tally(group.rows), add: group.add) {
             if group.rows.isEmpty, let empty = group.empty {
                 Text(empty)
                     .font(.callout).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(12)
                     .frame(maxWidth: .infinity, alignment: .leading)
+                    .modifier(RowCard(lifted: false))
             } else if CGFloat(group.rows.count) > Metric.visibleRows {
                 ScrollViewReader { proxy in
                     ScrollView { rows(group.rows, in: group) }
-                        .frame(height: Metric.visibleRows * Metric.row)
+                        .frame(height: Metric.visibleRows * Metric.pitch - Metric.gap)
+                        // The half row at the foot fades out, so it reads as more to scroll to.
+                        .mask {
+                            VStack(spacing: 0) {
+                                Color.black
+                                LinearGradient(colors: [.black, .black.opacity(0.15)], startPoint: .top, endPoint: .bottom)
+                                    .frame(height: 20)
+                            }
+                        }
                         // A row just added to be named is at the foot of the list: bring it into view.
                         .onChange(of: model.content.renaming, initial: true) { _, id in
                             guard let id, group.rows.contains(where: { $0.id == id }) else { return }
@@ -224,36 +264,23 @@ public struct MenuPageView: View {
             } else {
                 rows(group.rows, in: group)
             }
-            if !group.actions.isEmpty {
-                Divider()
-                rows(group.actions)
-            }
+            if !group.actions.isEmpty { rows(group.actions) }
         }
     }
 
     // MARK: - Cards and rows
 
-    /// Rows separated by hairlines across the card. In a list that can be reordered (`group.move`),
-    /// a row is dragged by its picture; while one is dragged the lines step aside so nothing is left
-    /// behind.
+    /// Rows, each a card of its own. In a list that can be reordered (`group.move`), a row is dragged
+    /// by its picture: it lifts, and the others slide aside.
     private func rows(_ entries: [MenuEntry], in group: MenuGroup? = nil) -> some View {
         let movable = group?.move != nil && entries.count > 1 ? group : nil
         let dragging = movable != nil && drag?.group == movable?.id
-        return VStack(spacing: 0) {
+        return VStack(spacing: Metric.gap) {
             ForEach(Array(entries.enumerated()), id: \.element.id) { index, entry in
                 let lifted = dragging && drag?.from == index
                 row(entry, handle: movable.map { RowHandle(group: $0, index: index, count: entries.count) })
                     .id(entry.id)
-                    .overlay(alignment: .top) {
-                        if index > 0 && !dragging { Divider() }
-                    }
-                    .background {
-                        if lifted {
-                            Rectangle().fill(Color(nsColor: .windowBackgroundColor))
-                                .overlay(Color.accentColor.opacity(0.08))
-                                .shadow(color: .black.opacity(0.18), radius: 6, y: 2)
-                        }
-                    }
+                    .modifier(RowCard(lifted: lifted))
                     .offset(y: rowOffset(index, count: entries.count, dragging: dragging))
                     .animation(lifted ? nil : .easeOut(duration: 0.15),
                                value: rowOffset(index, count: entries.count, dragging: dragging))
@@ -264,7 +291,7 @@ public struct MenuPageView: View {
 
     /// Where a dragged row would land: the pointer's travel in whole rows, kept inside the list.
     private func target(_ drag: RowDrag, count: Int) -> Int {
-        min(max(drag.from + Int((drag.height / Metric.row).rounded()), 0), count - 1)
+        min(max(drag.from + Int((drag.height / Metric.pitch).rounded()), 0), count - 1)
     }
 
     /// The dragged row follows the pointer; the rows between its start and where it would land slide
@@ -273,10 +300,10 @@ public struct MenuPageView: View {
         guard dragging, let drag else { return 0 }
         let to = target(drag, count: count)
         if index == drag.from {
-            return min(max(drag.height, -CGFloat(drag.from) * Metric.row), CGFloat(count - 1 - drag.from) * Metric.row)
+            return min(max(drag.height, -CGFloat(drag.from) * Metric.pitch), CGFloat(count - 1 - drag.from) * Metric.pitch)
         }
-        if drag.from < to, index > drag.from, index <= to { return -Metric.row }
-        if to < drag.from, index >= to, index < drag.from { return Metric.row }
+        if drag.from < to, index > drag.from, index <= to { return -Metric.pitch }
+        if to < drag.from, index >= to, index < drag.from { return Metric.pitch }
         return 0
     }
 
@@ -345,7 +372,7 @@ public struct MenuPageView: View {
             Text(entry.title).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
         case let .toggle(isOn, disabled, _):
             HStack(spacing: 10) {
-                picture(entry, tint: .secondary, handle: handle)
+                picture(entry, tint: .accentColor, handle: handle)
                 if renaming(entry) {
                     MenuNameField(model: model, title: entry.title)
                 } else {
@@ -363,7 +390,7 @@ public struct MenuPageView: View {
             .disabled(disabled)
         case let .choice(options, selected):
             HStack(spacing: 10) {
-                icon(entry, tint: .secondary)
+                icon(entry, tint: .accentColor)
                 Text(entry.title).lineLimit(1)
                 Spacer(minLength: 4)
                 Picker(entry.title, selection: Binding(get: { selected }, set: { model.pick(entry, index: $0) })) {
@@ -387,7 +414,7 @@ public struct MenuPageView: View {
     private func commandRow(_ entry: MenuEntry, danger: Bool, handle: RowHandle?) -> some View {
         let hovered = hoveredRow == entry.id
         let adds = (entry.symbol == "plus" || entry.symbol?.hasSuffix(".badge.plus") == true) && entry.leadsWithSymbol
-        let tint: Color = adds ? .accentColor : .secondary
+        let tint: Color = danger ? .red : .accentColor
         if renaming(entry) {
             return AnyView(HStack(spacing: 10) {
                 picture(entry, tint: tint, handle: handle)
@@ -494,13 +521,19 @@ public struct MenuPageView: View {
     /// A titled card of rows that folds to its title: click the title (a chevron before it) to fold
     /// or open it. Folded, the title says how many rows it holds. An empty section starts folded.
     @ViewBuilder
-    private func section<Rows: View>(_ title: String, count: Int, add: MenuEntry? = nil,
+    private func section<Rows: View>(_ title: String, count: Int, tally: String?, add: MenuEntry? = nil,
                                      @ViewBuilder rows: () -> Rows) -> some View {
         let folded = model.isFolded(title, isEmpty: count == 0)
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
                 sectionTitleButton(title, count: count, folded: folded)
                 Spacer(minLength: 6)
+                if let tally {
+                    Text(tally)
+                        .font(.system(size: 11, weight: .bold).monospacedDigit())
+                        .foregroundStyle(Color.accentColor)
+                        .accessibilityLabel(tally.contains("/") ? "\(tally.replacingOccurrences(of: "/", with: " of ")) on" : "\(tally) items")
+                }
                 if let add { addButton(add, section: title, count: count, folded: folded) }
             }
             .padding(.horizontal, 4)
@@ -548,10 +581,9 @@ public struct MenuPageView: View {
 
     private func sectionTitleButton(_ title: String, count: Int, folded: Bool) -> some View {
         Button { model.toggleCollapsed(title, isEmpty: count == 0) } label: {
-            HStack(spacing: 5) {
+            HStack(spacing: 6) {
                 chevron(folded: folded)
-                Text(title).font(.subheadline.weight(.semibold)).foregroundStyle(.primary.opacity(0.8))
-                if folded { Text("\(count)").font(.caption.weight(.medium)).foregroundStyle(.secondary) }
+                SectionLabel(title)
             }
             .contentShape(Rectangle())
         }
@@ -561,11 +593,9 @@ public struct MenuPageView: View {
         .accessibilityValue(folded ? "Collapsed" : "Expanded")
     }
 
+    /// A section's rows, a card each (`RowCard`).
     private func card<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
-        VStack(spacing: 0) { content() }
-            .background(RoundedRectangle(cornerRadius: CardStyle.corner, style: .continuous).fill(CardStyle.fill))
-            .overlay(RoundedRectangle(cornerRadius: CardStyle.corner, style: .continuous).strokeBorder(CardStyle.stroke))
-            .clipShape(RoundedRectangle(cornerRadius: CardStyle.corner, style: .continuous))
+        VStack(spacing: Metric.gap) { content() }
     }
 
     private func switchControl(_ entry: MenuEntry, isOn: Bool) -> some View {
@@ -588,6 +618,36 @@ public struct MenuPageView: View {
             IconTile(symbol: entry.symbol ?? "circle", tint: tint, size: Metric.tile)
                 .frame(width: Metric.tile + 2)
         }
+    }
+}
+
+/// A tool's main switch, as a pill: a power mark and On, filled with the accent, while it is on;
+/// grey and Off while it is off.
+private struct PowerButton: View {
+    let name: String
+    let isOn: Bool
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 5) {
+                Image(systemName: "power").font(.system(size: 11, weight: .bold))
+                Text(isOn ? "On" : "Off").font(.system(size: 12, weight: .semibold))
+            }
+            .foregroundStyle(isOn ? Color.white : Color.secondary)
+            .padding(.horizontal, 12)
+            .frame(height: 26)
+            .background(Capsule().fill(isOn ? Color.accentColor.opacity(hovering ? 0.85 : 1)
+                                       : Color.primary.opacity(hovering ? 0.12 : 0.08)))
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .help(isOn ? "Turn \(name) off" : "Turn \(name) on")
+        .accessibilityLabel(name)
+        .accessibilityValue(isOn ? "On" : "Off")
+        .accessibilityAddTraits(.isToggle)
     }
 }
 
@@ -616,10 +676,37 @@ private struct RowActions: ViewModifier {
     }
 }
 
+/// A row drawn as a card of its own: faintly filled with a hairline edge; lifted (being dragged), it
+/// stands off the page on a tint of the accent with a shadow.
+private struct RowCard: ViewModifier {
+    let lifted: Bool
+
+    func body(content: Content) -> some View {
+        let shape = RoundedRectangle(cornerRadius: MenuPageView.Metric.rowCorner, style: .continuous)
+        content
+            .clipShape(shape)
+            .background {
+                if lifted {
+                    shape.fill(Color(nsColor: .windowBackgroundColor)).overlay(shape.fill(Color.accentColor.opacity(0.08)))
+                } else {
+                    shape.fill(CardStyle.fill)
+                }
+            }
+            .overlay(shape.strokeBorder(lifted ? Color.accentColor.opacity(0.45) : CardStyle.stroke))
+            .shadow(color: .black.opacity(lifted ? 0.2 : 0), radius: 6, y: 2)
+    }
+}
+
 extension MenuEntry {
     var leadsWithSymbol: Bool {
         if case .symbol = leading { return true }
         return false
+    }
+
+    /// Whether the row's switch is on; nil for a row with no switch.
+    var switchedOn: Bool? {
+        if case let .toggle(isOn, _, _) = kind { return isOn }
+        return nil
     }
 }
 

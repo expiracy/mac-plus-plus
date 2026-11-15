@@ -12,7 +12,9 @@ import MacsPaneCore
 /// mac++'s Settings; Accessibility and Open at login belong to the whole app (the dropdown's banner
 /// and Settings).
 enum MacsPaneMenu {
-    static let brand = MenuPageBrand(name: "MacsPane", logo: { AnyView(MacsPaneLogo(size: $0)) })
+    static let brand = MenuPageBrand(name: "MacsPane", logo: { AnyView(MacsPaneLogo(size: $0)) },
+                                    symbol: "rectangle.split.2x1",
+                                    feature: "Windows")
 
     static func content(_ model: MacsPaneModel) -> MenuPageContent {
         var content = MenuPageContent()

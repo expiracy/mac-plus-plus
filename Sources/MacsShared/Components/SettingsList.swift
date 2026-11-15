@@ -78,9 +78,7 @@ public struct SettingsSection<Content: View>: View {
     public var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             if let header {
-                Text(header).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-                    .padding(.horizontal, 4)
-                    .accessibilityAddTraits(.isHeader)
+                SectionLabel(header).padding(.horizontal, 4)
             }
             _VariadicView.Tree(DividedRows()) { content }
                 .background(RoundedRectangle(cornerRadius: CardStyle.corner, style: .continuous).fill(CardStyle.fill))

@@ -185,8 +185,13 @@ public struct MenuEntry: Identifiable {
 /// A page's name, mark and section titles.
 public struct MenuPageBrand {
     public var name: String
-    /// The tool's mark, drawn at `size` beside its name and in the dropdown's switcher.
+    /// The tool's mark, drawn at `size` beside its name.
     public var logo: (CGFloat) -> AnyView
+    /// The SF Symbol for the tool on the dropdown's switcher, drawn in one colour.
+    public var symbol: String
+    /// What the tool is for, in a plain word ("Windows"): the name on its page's main switch. The
+    /// tool's own name when nil.
+    public var feature: String?
     /// The title over the box of what is live.
     public var liveTitle: String
     /// The box's line when nothing is live; nil leaves the box out until something is.
@@ -194,10 +199,12 @@ public struct MenuPageBrand {
     /// The title over the switches.
     public var togglesTitle: String
 
-    public init(name: String, logo: @escaping (CGFloat) -> AnyView, liveTitle: String = "Now",
-                emptyLive: String? = nil, togglesTitle: String = "Settings") {
+    public init(name: String, logo: @escaping (CGFloat) -> AnyView, symbol: String = "app",
+                feature: String? = nil, liveTitle: String = "Now", emptyLive: String? = nil, togglesTitle: String = "Settings") {
         self.name = name
         self.logo = logo
+        self.symbol = symbol
+        self.feature = feature
         self.liveTitle = liveTitle
         self.emptyLive = emptyLive
         self.togglesTitle = togglesTitle
@@ -348,7 +355,7 @@ public final class MenuPageTab: MenuTab {
     public func subpage(_ name: String) -> TabbedMenuSubpage? { pages(name) }
 
     public var title: String { model.brand.name }
-    public func icon() -> AnyView { model.brand.logo(16) }
+    public func icon() -> AnyView { AnyView(Image(systemName: model.brand.symbol)) }
     public func page() -> AnyView { AnyView(MenuPageView(model: model)) }
     public func refresh() { model.refresh() }
     public var changes: AnyPublisher<Void, Never> {
