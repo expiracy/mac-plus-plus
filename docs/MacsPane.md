@@ -32,7 +32,8 @@ applying presets, drawing layouts and settings) starts from MacsPane's page of t
   menu. *Hold for*, how long a dragged window rests on the notch before the picker opens, is in
   *Settings › MacsPane*, which also shows or opens the settings file.
 - **Shortcuts.** *Add* beside *Shortcuts* opens *New Shortcut* in the menu: press the keys (with ⌘, ⌃
-  or ⌥, or a function key alone), pick a layout or a preset, click the box on the big screen under it, and *Add Shortcut*.
+  or ⌥, or a function key alone), then under *What they do* click the box the window goes to on one of the layouts, each drawn small
+  with its boxes numbered; or switch to *Apply a preset* and click one. Then *Add Shortcut*.
   The editor gives them too: every layout box has *Add shortcut*. Pressing a box's keys in any app
   sends the window you're in to that box, on the screen it is on. A preset's shortcut sits in its editor's toolbar and applies it, as
   clicking it in the menu does. A combination does one thing: giving it to something new takes it

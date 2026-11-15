@@ -125,7 +125,7 @@ enum MacsPaneHelp {
             .init("square.stack.3d.up", "Presets",
                   "A preset puts a set of apps back where you like them. Add beside Presets saves your desktop as one or draws one; click it to apply it."),
             .init("keyboard", "Shortcuts",
-                  "Add beside Shortcuts opens New Shortcut: press the keys, pick a layout or a preset, and click the box on the big screen. They work from any app. The Shortcuts list shows them all, with a switch each; the pencil opens what one runs in the editor."),
+                  "Add beside Shortcuts opens New Shortcut: press the keys, then click the box the window goes to on one of the layouts, or switch to Apply a preset and click one. They work from any app. The Shortcuts list shows them all, with a switch each; the pencil opens what one runs in the editor."),
             .init("arrow.uturn.backward", "Undo",
                   "After a snap or a preset, a prompt at the notch offers to put the windows back where they were."),
             .init("doc.text", "The settings file",

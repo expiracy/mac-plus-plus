@@ -5,17 +5,10 @@ import SwiftUI
 import MacsPaneCore
 import MacsShared
 
-/// "New shortcut", a page of the dropdown opened by the + beside Shortcuts: press the keys, pick a
-/// layout or a preset from the strip, click the box the window should go to on the big screen under
-/// it, and add it. The keys are waited for as soon as the page opens; while they are, MacsPane's own
+/// "New shortcut", a page of the dropdown opened by Add beside Shortcuts: press the keys, then click
+/// the box the window goes to on one of the layouts, or click a preset, and add it. The keys are waited for as soon as the page opens; while they are, MacsPane's own
 /// shortcuts don't run, so keys already in use can be pressed and moved here.
 final class NewShortcutModel: ObservableObject {
-    /// What the big screen shows: a layout, whose boxes are clicked, or a preset.
-    enum Shown: Hashable {
-        case layout(String)
-        case preset(String)
-    }
-
     /// The page's name in the dropdown.
     static let page = "macspane-new-shortcut"
 
@@ -23,16 +16,11 @@ final class NewShortcutModel: ObservableObject {
     @Published private(set) var keys: KeyShortcut?
     @Published private(set) var recording = false
     @Published private(set) var hint: String?
-    @Published private(set) var shown: Shown?
+    /// What the keys will do: a layout's box (clicked on its tile) or a preset.
     @Published var target: ShortcutAction?
 
     init(app: MacsPaneModel) {
         self.app = app
-        if let layout = app.config.windows.layoutCatalog.first {
-            shown = .layout(layout.id)
-        } else if let preset = app.config.presets.first {
-            show(.preset(preset.id))
-        }
     }
 
 
@@ -80,18 +68,9 @@ final class NewShortcutModel: ObservableObject {
 
     // MARK: - What it does
 
-    /// Show a layout or a preset on the big screen. A preset is picked as it is shown; a layout's box
-    /// is picked by clicking it, unless the layout has only the one.
-    func show(_ item: Shown) {
-        shown = item
-        switch item {
-        case .preset(let id):
-            target = .preset(id: id)
-        case .layout(let id):
-            if case let .layoutBox(layoutID, _)? = target, layoutID == id { return }
-            let boxes = app.config.windows.layoutCatalog.first { $0.id == id }?.boxes.count ?? 0
-            target = boxes == 1 ? .layoutBox(layoutID: id, box: 0) : nil
-        }
+    /// A preset from the list: the keys will apply it.
+    func pickPreset(_ id: String) {
+        target = .preset(id: id)
     }
 
     /// What the keys do now, elsewhere: adding moves them here.
@@ -106,7 +85,7 @@ final class NewShortcutModel: ObservableObject {
         return app.config.shortcuts.first { $0.action == target && $0.shortcut != keys }?.shortcut
     }
 
-    /// What the shortcut will do, in a line under the big screen.
+    /// What the shortcut will do, in a line above Add Shortcut.
     var summary: String {
         let config = app.config
         switch target {
@@ -141,47 +120,51 @@ extension MacsPaneModel {
 
 // MARK: - The page
 
+/// The page: the keys, then what they do, every choice in view. Sending the window to a box: every
+/// layout as a small screen with its boxes numbered, and the box clicked on it. Applying a preset:
+/// every preset as a small screen with its apps, clicked to pick it. Then Add Shortcut.
 struct NewShortcutView: View {
     @ObservedObject var model: NewShortcutModel
     @Environment(\.closePage) private var closePage
+    /// Presets chosen with the switch, before any is picked.
+    @State private var presetsChosen = false
 
-    private static let screen = CGSize(width: 340, height: 196)
+    /// A layout's or preset's tile: three to a row across the page.
+    private static let tile = CGSize(width: 100, height: 62)
+    private static let columns = Array(repeating: GridItem(.flexible(), spacing: 10), count: 3)
 
     var body: some View {
         let config = model.app.config
-        let nothingToPick = config.windows.layoutCatalog.isEmpty && config.presets.isEmpty
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 14) {
             VStack(alignment: .leading, spacing: 6) {
-                StepHeading(number: 1, title: "Keys", hint: "What you'll press", done: model.keys != nil)
+                title("Keys")
                 SettingsSection(footer: keysNote) {
                     KeysField(model: model)
                 }
             }
-            VStack(alignment: .leading, spacing: 8) {
-                // The first layout is on show when the page opens, but nothing is picked until a
-                // box (or a preset) is.
-                StepHeading(number: 2, title: "What they do", hint: "A layout's box, or a preset",
-                            done: model.target != nil)
-                if nothingToPick {
-                    Text("No layouts or presets yet.").font(.callout).foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, minHeight: 44)
-                } else {
-                    PickerStrip(model: model)
+            if config.windows.layoutCatalog.isEmpty && config.presets.isEmpty {
+                Text("No layouts or presets yet.").font(.callout).foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, minHeight: 44)
+            } else {
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack {
+                        title("What they do")
+                        Spacer(minLength: 6)
+                        Picker("What they do", selection: Binding(get: { showsPresets }, set: choosePresets)) {
+                            Text("Send to a box").tag(false)
+                            Text("Apply a preset").tag(true)
+                        }
+                        .pickerStyle(.segmented).controlSize(.small).labelsHidden().fixedSize()
+                    }
+                    if showsPresets { presetTiles(config) } else { layoutTiles(config) }
                 }
             }
-            if !nothingToPick, model.shown != nil {
-                VStack(alignment: .leading, spacing: 8) {
-                    StepHeading(number: 3, title: thirdStep.title, hint: thirdStep.hint, done: model.target != nil)
-                    bigScreen(config)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 2)
-                    Text(model.summary + (model.replacing.map { " Replaces \($0.displayName)." } ?? ""))
-                        .font(.caption).foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
-                        .frame(maxWidth: .infinity)
-                }
-            }
-            Divider()
+            Text(model.target == nil
+                 ? (showsPresets ? "Click a preset." : "Click the box the window goes to.")
+                 : model.summary + (model.replacing.map { " Replaces \($0.displayName)." } ?? ""))
+                .font(.caption).foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: .infinity)
             HStack {
                 Spacer()
                 Button("Cancel") { leave() }
@@ -198,22 +181,76 @@ struct NewShortcutView: View {
         .onDisappear { model.stopRecording() }
     }
 
-    @ViewBuilder
-    private func bigScreen(_ config: MacsPaneConfig) -> some View {
-        switch model.shown {
-        case .layout(let id)?:
-            if let layout = config.windows.layoutCatalog.first(where: { $0.id == id }) {
-                LayoutBoxPicker(layout: layout, target: $model.target, size: Self.screen)
+    private func title(_ text: String) -> some View {
+        Text(text).font(.subheadline.weight(.semibold)).foregroundStyle(.primary.opacity(0.8))
+            .padding(.horizontal, 4)
+            .accessibilityAddTraits(.isHeader)
+    }
+
+    // MARK: Choosing
+
+    /// Whether the presets show: one is picked, the switch was set to them, or there are no layouts.
+    private var showsPresets: Bool {
+        if case .preset? = model.target { return true }
+        return presetsChosen || model.app.config.windows.layoutCatalog.isEmpty
+    }
+
+    /// The switch: what was picked on the other side is let go.
+    private func choosePresets(_ presets: Bool) {
+        presetsChosen = presets
+        model.target = nil
+    }
+
+    /// Every layout as a small screen, its boxes numbered: clicking a box picks it.
+    private func layoutTiles(_ config: MacsPaneConfig) -> some View {
+        LazyVGrid(columns: Self.columns, spacing: 10) {
+            ForEach(config.windows.layoutCatalog) { layout in
+                let picked: Bool = {
+                    if case let .layoutBox(id, _)? = model.target { return id == layout.id }
+                    return false
+                }()
+                VStack(spacing: 4) {
+                    LayoutBoxPicker(layout: layout, target: $model.target, size: Self.tile)
+                    name(layout.name, picked: picked)
+                }
             }
-        case .preset(let id)?:
-            if let preset = config.presets.first(where: { $0.id == id }) {
-                presetGlyph(preset, size: Self.screen)
-                    .accessibilityElement()
-                    .accessibilityLabel(preset.name)
-            }
-        case nil:
-            EmptyView()
         }
+    }
+
+    /// Every preset as a small screen with its apps: clicking one picks it.
+    @ViewBuilder
+    private func presetTiles(_ config: MacsPaneConfig) -> some View {
+        if config.presets.isEmpty {
+            Text("No presets yet. Save one with Add beside Presets on MacsPane's page.")
+                .font(.callout).foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, minHeight: 44)
+        } else {
+            LazyVGrid(columns: Self.columns, spacing: 10) {
+                ForEach(config.presets, id: \.id) { preset in
+                    let picked = model.target == .preset(id: preset.id)
+                    Button { model.pickPreset(preset.id) } label: {
+                        VStack(spacing: 4) {
+                            presetGlyph(preset, size: Self.tile)
+                                .overlay(RoundedRectangle(cornerRadius: Self.tile.height * 0.14 + 3, style: .continuous)
+                                    .strokeBorder(Color.accentColor, lineWidth: picked ? 2.5 : 0)
+                                    .padding(-3))
+                            name(preset.name, picked: picked)
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .help(preset.name)
+                    .accessibilityLabel(preset.name)
+                    .accessibilityAddTraits(picked ? .isSelected : [])
+                }
+            }
+        }
+    }
+
+    private func name(_ text: String, picked: Bool) -> some View {
+        Text(text).font(.caption.weight(picked ? .semibold : .regular))
+            .foregroundStyle(picked ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary))
+            .lineLimit(1)
     }
 
     private func leave() {
@@ -221,47 +258,10 @@ struct NewShortcutView: View {
         closePage?()
     }
 
-    /// The last step: a layout's box is clicked; a preset is only looked over.
-    private var thirdStep: (title: String, hint: String) {
-        if case .preset? = model.shown { return ("The preset", "What it puts where") }
-        return ("Which box", "Click where the window goes")
-    }
-
     private var keysNote: String? {
         if let hint = model.hint { return hint }
         if let from = model.takenFrom { return "Now on \(from): adding moves it here." }
         return nil
-    }
-}
-
-/// A step of the page: its number (a tick once it's done), what it is, and what to do there.
-private struct StepHeading: View {
-    let number: Int
-    let title: String
-    let hint: String
-    let done: Bool
-
-    var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 7) {
-            ZStack {
-                Circle().fill(done ? Color.accentColor : Color.secondary.opacity(0.25))
-                if done {
-                    Image(systemName: "checkmark").font(.system(size: 9, weight: .bold))
-                } else {
-                    Text("\(number)").font(.system(size: 10, weight: .semibold, design: .rounded))
-                }
-            }
-            .foregroundStyle(done ? Color.white : Color.primary)
-            .frame(width: 17, height: 17)
-            .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 4 }
-            Text(title).font(.subheadline.weight(.semibold))
-            Text(hint).font(.caption).foregroundStyle(.secondary).lineLimit(1)
-            Spacer(minLength: 0)
-        }
-        .padding(.horizontal, 2)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("Step \(number), \(title)\(done ? ", done" : ""). \(hint)")
-        .accessibilityAddTraits(.isHeader)
     }
 }
 
@@ -272,234 +272,6 @@ private func presetGlyph(_ preset: SnapLayout, size: CGSize) -> MacsPaneLayoutGl
         guard case let .app(bundleID) = slot.binding else { return nil }
         return SnapAppIcons.icon(bundleID: bundleID)
     }, largestIcon: 56)
-}
-
-/// Every layout, then every preset, small, each kind on a row of its own under a heading: the rows
-/// keep one height and scroll sideways when they hold more than fits. The one on the big screen is
-/// ringed.
-private struct PickerStrip: View {
-    @ObservedObject var model: NewShortcutModel
-
-    private static let thumb = CGSize(width: 50, height: 32)
-    /// A row's height: a thumbnail, its ring and its name.
-    private static let rowHeight: CGFloat = 56
-
-    var body: some View {
-        let config = model.app.config
-        VStack(alignment: .leading, spacing: 6) {
-            heading("Layouts")
-            SidewaysRow(height: Self.rowHeight) {
-                HStack(spacing: 6) {
-                    ForEach(config.windows.layoutCatalog) { layout in
-                        item(.layout(layout.id), name: layout.name,
-                             glyph: MacsPaneLayoutGlyph(boxes: layout.boxes, size: Self.thumb))
-                    }
-                }
-                .padding(.horizontal, 2)
-            }
-            heading("Presets")
-            if config.presets.isEmpty {
-                Text("None yet.").font(.caption).foregroundStyle(.tertiary).padding(.horizontal, 4)
-                    .frame(height: Self.rowHeight + SidewaysRow<EmptyView>.lane, alignment: .leading)
-            } else {
-                SidewaysRow(height: Self.rowHeight) {
-                    HStack(spacing: 6) {
-                        ForEach(config.presets, id: \.id) { preset in
-                            item(.preset(preset.id), name: preset.name, glyph: presetGlyph(preset, size: Self.thumb))
-                        }
-                    }
-                    .padding(.horizontal, 2)
-                }
-            }
-        }
-    }
-
-    private func heading(_ title: String) -> some View {
-        Text(title).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-            .padding(.horizontal, 4)
-            .accessibilityAddTraits(.isHeader)
-    }
-
-    private func item(_ item: NewShortcutModel.Shown, name: String, glyph: MacsPaneLayoutGlyph) -> some View {
-        let on = model.shown == item
-        return Button { model.show(item) } label: {
-            VStack(spacing: 3) {
-                glyph
-                    .padding(3)
-                    .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous)
-                        .strokeBorder(Color.accentColor, lineWidth: on ? 2 : 0))
-                Text(name).font(.system(size: 9)).lineLimit(1).frame(width: 58)
-                    .foregroundStyle(on ? .primary : .secondary)
-            }
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .help(name)
-        .accessibilityLabel(name)
-        .accessibilityAddTraits(on ? .isSelected : [])
-    }
-}
-
-/// A row of fixed height that scrolls sideways when its content is wider than it: by a trackpad's
-/// sideways swipe, or by a mouse's wheel, which would otherwise scroll the page (a trackpad's up-and-down
-/// swipe still does). A thin scroll bar runs in a lane of its own under the row then, never over the
-/// names (its thumb shows how much is in view, and drags); as macOS's overlay bars do, it shows while
-/// the row is scrolled, pointed at or dragged, and when the page opens, then fades. A row that fits
-/// never shows it, but keeps the lane, so its height doesn't change. All SwiftUI, so it scales with
-/// the menu's Size.
-private struct SidewaysRow<Content: View>: View {
-    let height: CGFloat
-    @ViewBuilder let content: Content
-    @StateObject private var scroller = SidewaysScroller()
-    @State private var hovering = false
-    @State private var wheel: Any?
-
-    /// The scroll bar's lane under the row: a gap, then the bar.
-    static var lane: CGFloat { 9 }
-
-    var body: some View {
-        VStack(spacing: 0) {
-            GeometryReader { outer in
-                content
-                    .fixedSize()
-                    .background(GeometryReader { inner in
-                        Color.clear.onChange(of: inner.size.width, initial: true) { _, width in scroller.setTotal(width) }
-                    })
-                    .offset(x: -scroller.offset)
-                    .frame(width: outer.size.width, height: height, alignment: .leading)
-                    .onChange(of: outer.size.width, initial: true) { _, width in scroller.setVisible(width) }
-            }
-            .frame(height: height)
-            .clipped()
-            SidewaysScrollBar(scroller: scroller)
-                .frame(height: 7)
-                .padding(.top, Self.lane - 7)
-                .opacity(scroller.overflows && (scroller.isActive || hovering) ? 1 : 0)
-                .allowsHitTesting(scroller.overflows && (scroller.isActive || hovering))
-                .animation(.easeOut(duration: 0.25), value: scroller.isActive || hovering)
-                .accessibilityHidden(true)
-        }
-        .contentShape(Rectangle())
-        .onHover { inside in
-            hovering = inside
-            inside ? listen() : stopListening()
-        }
-        .onDisappear(perform: stopListening)
-    }
-
-    /// While the pointer is on the row, its wheel and swipes scroll the row.
-    private func listen() {
-        guard wheel == nil else { return }
-        wheel = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [scroller] event in
-            scroller.wheel(event) ? nil : event
-        }
-    }
-
-    private func stopListening() {
-        if let wheel { NSEvent.removeMonitor(wheel) }
-        wheel = nil
-    }
-}
-
-/// How far a sideways row has scrolled, and scrolling it.
-private final class SidewaysScroller: ObservableObject {
-    @Published private(set) var visible: CGFloat = 0
-    @Published private(set) var total: CGFloat = 0
-    @Published private(set) var offset: CGFloat = 0
-    /// Scrolled a moment ago, or being dragged: the bar shows.
-    @Published private(set) var isActive = false
-    private var fade: DispatchWorkItem?
-    /// Whether the bar has flashed yet, to show the row scrolls.
-    private var flashed = false
-    var dragging = false {
-        didSet { dragging ? wake() : rest() }
-    }
-
-    var overflows: Bool { total > visible + 0.5 }
-    private var range: CGFloat { max(0, total - visible) }
-
-    func setVisible(_ width: CGFloat) { visible = width; settle() }
-    func setTotal(_ width: CGFloat) { total = width; settle() }
-
-    /// Keep the offset in range, and flash the bar the first time the row is found to overflow.
-    private func settle() {
-        if offset > range { offset = range }
-        if overflows, visible > 0, !flashed {
-            flashed = true
-            wake()
-            rest(after: 1.5)
-        }
-    }
-
-    func scroll(to x: CGFloat) {
-        let x = min(max(0, x), range)
-        guard x != offset else { return }
-        offset = x
-        wake()
-        rest()
-    }
-
-    /// A wheel or swipe over the row: true when it scrolled the row. A mouse's wheel turns sideways, a
-    /// line a notch; a trackpad's up-and-down swipe is left for the page.
-    func wheel(_ event: NSEvent) -> Bool {
-        guard overflows else { return false }
-        let upAndDown = abs(event.scrollingDeltaY) > abs(event.scrollingDeltaX)
-        if upAndDown && event.hasPreciseScrollingDeltas { return false }
-        let delta = upAndDown ? event.scrollingDeltaY * 10 : event.scrollingDeltaX
-        scroll(to: offset - delta)
-        return true
-    }
-
-    private func wake() {
-        fade?.cancel()
-        if !isActive { isActive = true }
-    }
-
-    /// Fade the bar out a moment after the last scroll, unless it is being dragged.
-    private func rest(after delay: TimeInterval = 1) {
-        guard !dragging else { return }
-        fade?.cancel()
-        let work = DispatchWorkItem { [weak self] in self?.isActive = false }
-        fade = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
-    }
-}
-
-/// A thumb as wide as the share of the row in view, where the view is, as an overlay scroll bar draws
-/// one: on its own, and over a faint track while the pointer is on the bar. Dragging the thumb scrolls
-/// the row.
-private struct SidewaysScrollBar: View {
-    @ObservedObject var scroller: SidewaysScroller
-    @State private var dragStart: CGFloat?
-    @State private var hovering = false
-
-    var body: some View {
-        GeometryReader { geometry in
-            let width = geometry.size.width
-            let share = scroller.total > 0 ? min(1, scroller.visible / scroller.total) : 1
-            let thumb = max(28, width * share)
-            let range = max(0, scroller.total - scroller.visible)
-            let x = range > 0 ? (width - thumb) * scroller.offset / range : 0
-            let wide = hovering || dragStart != nil
-            ZStack(alignment: .leading) {
-                Capsule().fill(Color.primary.opacity(wide ? 0.08 : 0))
-                Capsule().fill(Color.primary.opacity(wide ? 0.5 : 0.35))
-                    .frame(width: thumb, height: wide ? 7 : 5)
-                    .offset(x: x)
-                    .gesture(DragGesture(minimumDistance: 0).onChanged { drag in
-                        let start = dragStart ?? scroller.offset
-                        if dragStart == nil { dragStart = start; scroller.dragging = true }
-                        guard width > thumb else { return }
-                        scroller.scroll(to: start + drag.translation.width * range / (width - thumb))
-                    }.onEnded { _ in dragStart = nil; scroller.dragging = false })
-            }
-            .frame(maxHeight: .infinity)
-            .contentShape(Rectangle())
-            .onHover { hovering = $0 }
-            .animation(.easeOut(duration: 0.12), value: wide)
-        }
-        .padding(.horizontal, 2)
-    }
 }
 
 /// The keys of the shortcut being made, as keycaps, or, while they are waited for, a dashed prompt.
@@ -570,8 +342,10 @@ private struct KeysField: View {
 }
 
 
-/// A layout drawn as a big screen, its boxes numbered and clicked to pick one: the box picked is
-/// filled, and the one under the pointer lights.
+/// A layout drawn as a small screen with its boxes numbered: clicking one picks it. Which box the
+/// pointer is on comes from the layout itself (the one in front, where boxes overlap), so the box
+/// that lights and the box that's picked are always the one drawn there. The box picked is filled
+/// and stays so; the one under the pointer takes a light tint, without hiding it.
 private struct LayoutBoxPicker: View {
     let layout: WindowLayout
     @Binding var target: ShortcutAction?
@@ -584,36 +358,58 @@ private struct LayoutBoxPicker: View {
     }
 
     var body: some View {
-        MacsPaneLayoutGlyph(boxes: layout.boxes, size: size, highlighted: hovered ?? picked)
-            .overlay(alignment: .topLeading) { boxes }
+        MacsPaneLayoutGlyph(boxes: layout.boxes, size: size, highlighted: picked)
+            .overlay { numbers.allowsHitTesting(false) }
+            .contentShape(Rectangle())
+            .onContinuousHover { phase in
+                switch phase {
+                case let .active(point): hovered = box(at: point)
+                case .ended: hovered = nil
+                }
+            }
+            .gesture(SpatialTapGesture().onEnded { tap in
+                if let box = box(at: tap.location) { pick(box) }
+            })
+            .help(hovered.map { "\(layout.name), box \($0 + 1)" } ?? layout.name)
     }
 
-    /// A numbered button over each box, back ones first, so the front window's box wins where they
-    /// overlap.
-    private var boxes: some View {
-        let layers = layout.layers
-        let order = layout.boxes.indices.sorted { (layers[$0], -$0) > (layers[$1], -$1) }
-        return ZStack(alignment: .topLeading) {
-            ForEach(order, id: \.self) { index in
-                let unit = layout.boxes[index].unitRect
-                let rect = CGRect(x: unit.minX * size.width, y: (1 - unit.maxY) * size.height,
-                                  width: unit.width * size.width, height: unit.height * size.height)
-                let lit = (hovered ?? picked) == index
+    /// The box under a point in the picture.
+    private func box(at point: CGPoint) -> Int? {
+        layout.boxIndex(atTopLeftUnit: CGPoint(x: point.x / size.width, y: point.y / size.height))
+    }
+
+    private func pick(_ box: Int) {
+        target = .layoutBox(layoutID: layout.id, box: box)
+    }
+
+    /// Each box's number, and the tint on the one under the pointer. VoiceOver picks a box by its
+    /// number.
+    private var numbers: some View {
+        ZStack {
+            ForEach(layout.boxes.indices, id: \.self) { index in
+                let rect = rect(of: index)
+                let isPicked = picked == index
                 Text("\(index + 1)")
-                    .font(.system(size: 20, weight: .semibold, design: .rounded))
-                    .foregroundStyle(lit ? Color.white : Color.accentColor)
+                    .font(.system(size: min(20, max(11, size.height * 0.2)), weight: .semibold, design: .rounded))
+                    .foregroundStyle(isPicked ? Color.white : Color.accentColor)
                     .frame(width: rect.width, height: rect.height)
-                    .contentShape(Rectangle())
-                    .offset(x: rect.minX, y: rect.minY)
-                    .onTapGesture { target = .layoutBox(layoutID: layout.id, box: index) }
-                    .onHover { hovered = $0 ? index : (hovered == index ? nil : hovered) }
+                    .background(Color.accentColor.opacity(hovered == index && !isPicked ? 0.18 : 0))
+                    .position(x: rect.midX, y: rect.midY)
                     .accessibilityElement()
                     .accessibilityLabel("\(layout.name), box \(index + 1)")
-                    .accessibilityAddTraits(picked == index ? [.isButton, .isSelected] : .isButton)
-                    .accessibilityAction { target = .layoutBox(layoutID: layout.id, box: index) }
+                    .accessibilityAddTraits(isPicked ? [.isButton, .isSelected] : .isButton)
+                    .accessibilityAction { pick(index) }
             }
         }
-        .frame(width: size.width, height: size.height, alignment: .topLeading)
+        .frame(width: size.width, height: size.height)
+        .clipShape(RoundedRectangle(cornerRadius: max(2, size.height * 0.14), style: .continuous))
+    }
+
+    /// Where box `index` is drawn, in points from the picture's top left.
+    private func rect(of index: Int) -> CGRect {
+        let unit = layout.boxes[index].unitRect
+        return CGRect(x: unit.minX * size.width, y: (1 - unit.maxY) * size.height,
+                      width: unit.width * size.width, height: unit.height * size.height)
     }
 }
 #endif

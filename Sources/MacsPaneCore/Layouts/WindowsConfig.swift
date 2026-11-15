@@ -204,10 +204,15 @@ public struct WindowLayout: Codable, Equatable, Sendable, Identifiable {
         boxLayers = current
     }
 
-    /// The box drawn under a normalized pointer inside the drag-bar mini display.
+    /// The box drawn under a normalized pointer (origin top left) in a picture of the layout: where
+    /// boxes overlap, the one in front, as the picture draws it (the lowest layer, and on one layer the
+    /// box drawn last).
     public func boxIndex(atTopLeftUnit point: CGPoint) -> Int? {
         let appKitPoint = CGPoint(x: point.x, y: 1 - point.y)
-        return boxes.firstIndex { $0.unitRect.contains(appKitPoint) }
+        let layers = self.layers
+        return boxes.indices
+            .filter { boxes[$0].unitRect.contains(appKitPoint) }
+            .min { (layers[$0], -$0) < (layers[$1], -$1) }
     }
 
     /// Fixed shapes from the approved draft: the notch's default five first, in its order, then the
