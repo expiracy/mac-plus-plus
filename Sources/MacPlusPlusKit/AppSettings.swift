@@ -69,7 +69,7 @@ final class AppSettings: ObservableObject {
             let index = tools.firstIndex { TabbedMenuPage.help(for: $0.name) == name }!
             let help = tools[index]
             title = "Help"
-            view = AnyView(HelpPane(content: help, replayTitle: "Play \(help.name)'s lessons again") { [weak self] in
+            view = AnyView(HelpPane(content: help, replayTitle: "Play the \(help.title ?? help.name) lessons again") { [weak self] in
                 self?.replay(index)
             })
         case TabbedMenuPage.settings:
@@ -109,6 +109,7 @@ final class AppSettings: ObservableObject {
         name: "mac++",
         tagline: "MacsPane and MacsBored, behind one icon.",
         logo: { AnyView(MacPlusPlusLogo(size: $0)) },
+        mark: { AnyView(MacPlusPlusGlyph(filled: true).frame(width: $0, height: $0).foregroundStyle(.primary)) },
         topics: [
             .init("menubar.rectangle", "One icon, one menu",
                   "Click the apple in the menu bar. Each tool has a page of the menu; switch between them at its top. The ? beside a tool's name opens its Help."),
