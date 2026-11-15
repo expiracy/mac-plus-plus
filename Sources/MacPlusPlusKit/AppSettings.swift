@@ -148,7 +148,7 @@ private struct SettingsPage: View {
                          text: settings.version.map { "Version \($0)" } ?? "Built from source") {
                 settings.open(TabbedMenuPage.help(for: nil))
             }
-            SettingsSection {
+            SettingsSection("General", footer: "For mac++ as a whole: they cover both apps.") {
                 SettingsRow(icon: AnyView(SettingsIcon("hand.raised.fill", .blue)), "Accessibility") {
                     if settings.granted {
                         Label("On", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
@@ -167,7 +167,7 @@ private struct SettingsPage: View {
                 }
             }
             if !settings.toolLinks.isEmpty {
-                SettingsSection("Apps") {
+                SettingsSection("Apps", footer: "Each app's own settings. Its on switch is on its page of the menu.") {
                     ForEach(settings.toolLinks, id: \.page) { tool in
                         SettingsLink(icon: tool.logo(22), tool.name) { settings.open(tool.page) }
                     }
