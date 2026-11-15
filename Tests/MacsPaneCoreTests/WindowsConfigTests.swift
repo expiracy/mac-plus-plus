@@ -73,6 +73,20 @@ import Foundation
     let centre = WindowLayout.builtIns.first { $0.id == "centre" }!
     #expect(centre.boxIndex(atTopLeftUnit: CGPoint(x: 0.5, y: 0.5)) == 0)
     #expect(centre.boxIndex(atTopLeftUnit: CGPoint(x: 0.05, y: 0.5)) == nil)
+    // Desk: the right column is two boxes, the top one first (y is from the top here).
+    let desk = WindowLayout.builtIns.first { $0.id == "desk" }!
+    #expect(desk.boxIndex(atTopLeftUnit: CGPoint(x: 0.8, y: 0.25)) == 1)
+    #expect(desk.boxIndex(atTopLeftUnit: CGPoint(x: 0.8, y: 0.75)) == 2)
+}
+
+@Test func whereBoxesOverlapThePointerPicksTheOneInFront() {
+    func box(_ x: Double, _ w: Double) -> SnapRegion { .custom(NormalizedRect(x: x, y: 0, width: w, height: 1)) }
+    // The left 60% and the right 60% overlap in the middle; the lower layer is in front.
+    let leftInFront = WindowLayout(name: "", boxes: [box(0, 0.6), box(0.4, 0.6)], boxLayers: [0, 1])
+    #expect(leftInFront.boxIndex(atTopLeftUnit: CGPoint(x: 0.5, y: 0.5)) == 0)
+    let rightInFront = WindowLayout(name: "", boxes: [box(0, 0.6), box(0.4, 0.6)], boxLayers: [1, 0])
+    #expect(rightInFront.boxIndex(atTopLeftUnit: CGPoint(x: 0.5, y: 0.5)) == 1)
+    #expect(rightInFront.boxIndex(atTopLeftUnit: CGPoint(x: 0.2, y: 0.5)) == 0)
 }
 
 @Test func malformedSavedLayoutDoesNotResetTheNotchOrOtherLayouts() throws {

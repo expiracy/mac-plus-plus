@@ -307,7 +307,7 @@ enum DevMacsPaneSnapshot {
     /// With `preset`, the first preset picked rather than the first layout.
     @MainActor private static func newShortcut(_ model: MacsPaneModel, preset: Bool = false) -> some View {
         let page = NewShortcutModel(app: model)
-        if preset, let first = model.config.presets.first { page.show(.preset(first.id)) }
+        if preset, let first = model.config.presets.first { page.pickPreset(first.id) }
         return NewShortcutView(model: page)
             .frame(width: 384)
             .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color(nsColor: .windowBackgroundColor)))
