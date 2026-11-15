@@ -489,9 +489,7 @@ struct TabbedMenuView: View {
                         .padding(Metric.edge)
                 }
             } else {
-                if model.tabs.count > 1 {
-                    topBar { switcher }
-                }
+                masthead
                 if let banner = model.banner {
                     bannerCard(banner)
                         .padding(.horizontal, Metric.edge)
@@ -575,8 +573,9 @@ struct TabbedMenuView: View {
                 model.actions.quit()
             }
         }
-        .padding(Metric.edge)
-        .overlay(alignment: .top) { Divider() }
+        .padding(.horizontal, Metric.edge)
+        .padding(.top, 4)
+        .padding(.bottom, Metric.edge)
     }
 
     private func footerButton(_ title: String, symbol: String, help: String, on: Bool,
@@ -593,33 +592,33 @@ struct TabbedMenuView: View {
         .accessibilityAddTraits(on ? [.isSelected] : [])
     }
 
-    /// The tools along a hairline that runs the bubble's width: each one's mark and name, the one
-    /// showing in bold over an underline in the accent.
-    private var switcher: some View {
-        HStack(spacing: 0) {
-            ForEach(Array(model.tabs.enumerated()), id: \.offset) { index, tab in
-                let chosen = index == model.selected
-                Button { model.select(index) } label: {
-                    VStack(spacing: 7) {
-                        HStack(spacing: 6) {
-                            tab.icon().frame(width: 16, height: 16)
-                                .saturation(chosen ? 1 : 0).opacity(chosen ? 1 : 0.7)
-                            Text(tab.title)
-                                .font(.callout.weight(chosen ? .semibold : .medium))
-                                .foregroundStyle(chosen ? AnyShapeStyle(.primary)
-                                                 : AnyShapeStyle(hovered == index ? .primary : .secondary))
-                        }
-                        Capsule().fill(chosen ? Color.accentColor : .clear).frame(height: 3)
-                            .padding(.horizontal, 24)
+    /// The top of a tool's page, drawn as Settings' navigation bar is (the same height, on the same
+    /// hairline): the tools' tabs across it, each its symbol alone (its name is on the page under
+    /// it), the one showing in the accent with a line under it, on the hairline.
+    private var masthead: some View {
+        topBar {
+            HStack(spacing: 0) {
+                ForEach(Array(model.tabs.enumerated()), id: \.offset) { index, tab in
+                    let chosen = index == model.selected
+                    Button { model.select(index) } label: {
+                        tab.icon()
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundStyle(chosen ? AnyShapeStyle(Color.accentColor)
+                                             : AnyShapeStyle(hovered == index ? .primary : .secondary))
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .overlay(alignment: .bottom) {
+                                Capsule().fill(chosen ? Color.accentColor : .clear).frame(width: 44, height: 2.5)
+                            }
+                            .contentShape(Rectangle())
                     }
-                    .frame(maxWidth: .infinity)
-                    .contentShape(Rectangle())
+                    .buttonStyle(.plain)
+                    .onHover { hovered = $0 ? index : (hovered == index ? nil : hovered) }
+                    .help("\(tab.title) (⌘\(index + 1))")
+                    .accessibilityLabel(tab.title)
+                    .accessibilityAddTraits(chosen ? [.isSelected] : [])
                 }
-                .buttonStyle(.plain)
-                .onHover { hovered = $0 ? index : (hovered == index ? nil : hovered) }
-                .help("\(tab.title) (⌘\(index + 1))")
-                .accessibilityAddTraits(chosen ? [.isSelected] : [])
             }
+            .frame(height: Metric.barHeight)
         }
     }
 }
@@ -663,13 +662,15 @@ private struct FooterButtonStyle: ButtonStyle {
 
         var body: some View {
             let fill = on ? Color.accentColor.opacity(configuration.isPressed ? 0.24 : 0.15)
-                : Color.primary.opacity(configuration.isPressed ? 0.14 : hovering ? 0.09 : 0.06)
+                : Color.primary.opacity(configuration.isPressed ? 0.12 : hovering ? 0.08 : 0.04)
+            let shape = RoundedRectangle(cornerRadius: 9, style: .continuous)
             configuration.label
-                .font(.body.weight(on ? .semibold : .regular))
+                .font(.body.weight(on ? .semibold : .medium))
                 .foregroundStyle(on ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(.primary))
-                .frame(maxWidth: .infinity, minHeight: 30)
-                .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(fill))
-                .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .frame(maxWidth: .infinity, minHeight: 32)
+                .background(shape.fill(fill))
+                .overlay(shape.strokeBorder(on ? Color.accentColor.opacity(0.4) : Color.primary.opacity(0.12)))
+                .contentShape(shape)
                 .onHover { hovering = $0 }
         }
     }

@@ -12,6 +12,25 @@ public enum CardStyle {
     public static let stroke = Color.primary.opacity(0.08)
 }
 
+/// A section's name over its cards: small capitals, spaced out, in the secondary colour.
+public struct SectionLabel: View {
+    let text: String
+
+    public init(_ text: String) {
+        self.text = text
+    }
+
+    public var body: some View {
+        Text(text.uppercased())
+            .font(.system(size: 11, weight: .bold))
+            .tracking(0.9)
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+            .accessibilityLabel(text)
+            .accessibilityAddTraits(.isHeader)
+    }
+}
+
 /// An SF Symbol in a tint, on a rounded square of the same tint, faint: the icon every card and row
 /// leads with.
 public struct IconTile: View {
@@ -32,52 +51,6 @@ public struct IconTile: View {
             .frame(width: size, height: size)
             .background(RoundedRectangle(cornerRadius: size * 0.27, style: .continuous).fill(tint.opacity(0.13)))
             .accessibilityHidden(true)
-    }
-}
-
-/// The top of a tool's page of the dropdown: its mark, its name (with a ? to its Help, when it has
-/// one) and one line under it, then anything at its right (the tool's main switch).
-public struct PageHeader<Trailing: View>: View {
-    let logo: AnyView
-    let title: String
-    let line: String?
-    let help: (() -> Void)?
-    let trailing: Trailing
-
-    public init(logo: AnyView, title: String, line: String?, help: (() -> Void)? = nil,
-                @ViewBuilder trailing: () -> Trailing) {
-        self.logo = logo
-        self.title = title
-        self.line = line
-        self.help = help
-        self.trailing = trailing()
-    }
-
-    public var body: some View {
-        HStack(spacing: 10) {
-            logo.shadow(color: .black.opacity(0.12), radius: 2, y: 1)
-            VStack(alignment: .leading, spacing: 1) {
-                HStack(spacing: 5) {
-                    Text(title).font(.system(size: 15, weight: .semibold))
-                    if let help { HelpButton(subject: title, action: help) }
-                }
-                if let line {
-                    Text(line).font(.caption).foregroundStyle(.secondary).lineLimit(2)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-            .accessibilityElement(children: .combine)
-            .accessibilityAddTraits(.isHeader)
-            Spacer(minLength: 4)
-            trailing
-        }
-        .padding(.horizontal, 4)
-    }
-}
-
-extension PageHeader where Trailing == EmptyView {
-    public init(logo: AnyView, title: String, line: String?, help: (() -> Void)? = nil) {
-        self.init(logo: logo, title: title, line: line, help: help) { EmptyView() }
     }
 }
 
@@ -150,8 +123,7 @@ public struct TitledCard<Content: View>: View {
     public var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
-                Text(title).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-                    .accessibilityAddTraits(.isHeader)
+                SectionLabel(title)
                 Spacer()
                 trailing
             }

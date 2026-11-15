@@ -8,7 +8,7 @@ import SwiftUI
 public protocol MenuTab: AnyObject {
     /// The page's name in the switcher.
     var title: String { get }
-    /// The page's mark in the switcher, about 16 pt square.
+    /// The page's symbol in the switcher, drawn in one colour (the switcher sets its size and tint).
     func icon() -> AnyView
     /// Everything under the switcher, drawn without a bubble of its own.
     func page() -> AnyView
