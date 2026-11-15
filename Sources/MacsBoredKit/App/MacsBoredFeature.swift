@@ -138,6 +138,8 @@ enum MacsBoredHelp {
         name: "MacsBored",
         tagline: "Your Mac's shortcuts, sent to the computer you're remoting into, and keys of your own everywhere else.",
         logo: { AnyView(MacsBoredLogo(size: $0)) },
+        title: "Keyboard",
+        mark: HelpContent.symbolMark("keyboard"),
         topics: [
             .init("arrow.right.to.line", "Passthrough",
                   "While a passthrough app (Windows App, Citrix Viewer, a virtual machine) is in front, ⌘⇥, Spotlight, ⌃←/→, the screenshot keys and the rest go to it, not your Mac. Switch to any other app and macOS has them back."),

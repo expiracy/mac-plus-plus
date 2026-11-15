@@ -45,6 +45,10 @@ public struct HelpContent {
     /// One line under the name: what the tool does.
     public var tagline: String
     public var logo: (CGFloat) -> AnyView
+    /// What the Help page calls the tool ("Windows"), when not `name`.
+    public var title: String?
+    /// The one-colour mark at the top of the Help page, drawn at a size, when not `logo`.
+    public var mark: ((CGFloat) -> AnyView)?
     public var topics: [Topic]
     public var keys: [Key]
     /// A last word, such as where the tool keeps its settings.
@@ -52,17 +56,30 @@ public struct HelpContent {
     /// Drawn above the lessons, under the last word.
     public var links: [Link]
 
-    public init(name: String, tagline: String, logo: @escaping (CGFloat) -> AnyView, topics: [Topic],
-                keys: [Key] = [], footnote: String? = nil, links: [Link] = []) {
+    public init(name: String, tagline: String, logo: @escaping (CGFloat) -> AnyView, title: String? = nil,
+                mark: ((CGFloat) -> AnyView)? = nil, topics: [Topic], keys: [Key] = [], footnote: String? = nil,
+                links: [Link] = []) {
         self.links = links
         self.name = name
         self.tagline = tagline
         self.logo = logo
+        self.title = title
+        self.mark = mark
         self.topics = topics
         self.keys = keys
         self.footnote = footnote
     }
 }
+extension HelpContent {
+    /// A `mark` drawn from an SF Symbol, in one colour, about the size asked for.
+    public static func symbolMark(_ symbol: String) -> (CGFloat) -> AnyView {
+        { size in
+            AnyView(Image(systemName: symbol).font(.system(size: size * 0.8, weight: .regular))
+                .foregroundStyle(.primary).frame(width: size, height: size).accessibilityHidden(true))
+        }
+    }
+}
+
 /// A Help page of the dropdown, drawn as Settings' panes are: what it is for, how each part works,
 /// its keys and any last word, then its lessons again (in the onboarding window).
 public struct HelpPane: View {
@@ -78,7 +95,8 @@ public struct HelpPane: View {
 
     public var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            SettingsHero(icon: content.logo(48), title: content.name, text: content.tagline)
+            SettingsHero(icon: (content.mark ?? content.logo)(40), title: content.title ?? content.name,
+                         text: content.tagline)
             SettingsSection("How it works") {
                 ForEach(content.topics) { topic in
                     SettingsRow(icon: AnyView(SettingsIcon(topic.symbol, .accentColor)), topic.title, detail: topic.text)

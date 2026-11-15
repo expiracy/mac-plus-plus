@@ -117,6 +117,8 @@ enum MacsPaneHelp {
         name: "MacsPane",
         tagline: "Snap windows into place by dragging them to the notch.",
         logo: { AnyView(MacsPaneLogo(size: $0)) },
+        title: "Windows",
+        mark: HelpContent.symbolMark("rectangle.split.2x1"),
         topics: [
             .init("rectangle.split.2x1", "Drag to the notch",
                   "Drag any window by its title bar to the top of the screen and hold it on the notch. Your layouts open; let go on a box and the window fills it. Hold for, in Settings › MacsPane, sets how long to wait."),
