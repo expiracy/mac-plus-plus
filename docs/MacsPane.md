@@ -29,8 +29,8 @@ applying presets, drawing layouts and settings) starts from MacsPane's page of t
   and a switch for whether the notch offers it. Deleted built-ins come back
   as they first were with *Restore built-in layouts*. Drag a row of either list by its picture to
   reorder it; the notch offers its layouts in the same order as the
-  menu. Every MacsPane setting is on its page of the menu; *Hold for*, how long a dragged window rests
-  on the notch before the picker opens, is under the lists.
+  menu. *Hold for*, how long a dragged window rests on the notch before the picker opens, is in
+  *Settings › MacsPane*, which also shows or opens the settings file.
 - **Shortcuts.** *Add* beside *Shortcuts* opens *New Shortcut* in the menu: press the keys (with ⌘, ⌃
   or ⌥, or a function key alone), pick a layout or a preset, click the box on the big screen under it, and *Add Shortcut*.
   The editor gives them too: every layout box has *Add shortcut*. Pressing a box's keys in any app

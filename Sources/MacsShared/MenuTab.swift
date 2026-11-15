@@ -30,5 +30,11 @@ public protocol MenuTab: AnyObject {
     func subpage(_ name: String) -> TabbedMenuSubpage?
     /// Set by the dropdown: the page calls it to open one of its `subpage`s.
     var onOpenPage: (String) -> Void { get set }
+    /// The `subpage` holding the tool's settings, listed in the app's Settings; nil for none.
+    var settingsPage: String? { get }
+}
+
+extension MenuTab {
+    public var settingsPage: String? { nil }
 }
 #endif

@@ -11,17 +11,18 @@ Two menu-bar tools for macOS in one app, behind one icon.
 mac++'s mark is an apple with "++" inside. Click it in the menu bar and the dropdown opens on the page
 you used last. The switcher along its top moves between MacsPane and MacsBored (⌘1 and ⌘2 do the
 same). Each page is that tool's own menu, drawn the same way for both: its main switch, what it is doing
-now, its settings, and its lists, each with *+ Add* on its title to make a new one. Click a section's title to fold it; each page
+now, and its lists, each with *+ Add* on its title to make a new one. Its other settings are in
+Settings, under its name. Click a section's title to fold it; each page
 remembers what is folded. The foot of the dropdown belongs to the
 whole app:
 
 - **Settings** (⌘,) opens mac++'s Settings.
 - **Quit mac++** (⌘Q) stops both tools; MacsBored gives macOS every shortcut back first.
 
-Settings is for mac++ only, one page drawn as System Settings draws a pane: which mac++ this is (its
-version), Accessibility (one grant covers both tools), Open at login, and Size, which draws the whole
-menu Small, Default, Large or Larger. Each tool's own settings, its
-main switch among them, stay on its page of the menu.
+Settings is one page drawn as System Settings draws a pane: which mac++ this is (its version),
+Accessibility (one grant covers both tools), Open at login, and Size, which draws the whole menu
+Small, Default, Large or Larger. Under *Apps*, a row for each tool opens its own settings. Each
+tool's main switch stays on its page of the menu.
 
 Settings holds settings only. What explains them is Help: the ? beside a tool's name, at the top of its
 page, opens its Help (how it works, its keys, and its lessons again); the ? beside mac++ in Settings

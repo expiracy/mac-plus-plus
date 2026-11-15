@@ -30,7 +30,8 @@ app and macOS has them back. Alongside that it runs your own shortcuts, BetterTo
   those keys straight to the app in front. A trigger with no apps works everywhere except inside a
   passthrough app, whose keys belong to the session; name the passthrough app to have it work there too.
   Giving a trigger keys another trigger had takes them from it.
-- **Caps Lock as Hyper**, in the settings file only (`"capsLockAsHyper": true`). Caps Lock holds
+- **Caps Lock as Hyper**, in *Settings › MacsBored* or the settings file
+  (`"capsLockAsHyper": true`). Caps Lock holds
   ⌃⌥⇧⌘, a combination no app uses, for your triggers. It is remapped with `hidutil` for this login
   session and put back when it is switched off or MacsBored quits; if another tool already remaps keys,
   it stays off.

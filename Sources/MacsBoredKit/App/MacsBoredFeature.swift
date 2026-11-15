@@ -26,6 +26,8 @@ public final class MacsBoredFeature {
     static let editorPage = "macsbored-entry"
     /// The names of MacsBored's own pages of the dropdown, for pictures of them.
     public static let pages = [editorPage]
+    /// MacsBored's settings page, opened from mac++'s Settings.
+    static let settingsPage = "macsbored-settings"
 
     /// The config file's commands for scripts and agents, answered before the app starts:
     /// `macsbored path`, `macsbored check [file]`, `macsbored schema` (after the program's own path).
@@ -57,9 +59,16 @@ public final class MacsBoredFeature {
             model?.revealConfigFile()
         })
         self.tab = tab
-        tab.pages = { [weak self] name in
-            MainActor.assumeIsolated { name == Self.editorPage ? self?.editorPage() : nil }
+        tab.pages = { [weak self, weak model, weak tab] name in
+            MainActor.assumeIsolated {
+                switch name {
+                case Self.editorPage: self?.editorPage()
+                case Self.settingsPage: model?.settingsPage { tab?.onClose() }
+                default: nil
+                }
+            }
         }
+        tab.settingsPage = Self.settingsPage
         model.onEdit = { [weak self] draft in
             self?.editing = draft
             self?.tab.onOpenPage(Self.editorPage)

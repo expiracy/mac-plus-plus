@@ -6,8 +6,8 @@ import SwiftUI
 import MacsShared
 
 /// mac++'s Settings, one page of the dropdown drawn as System Settings draws a pane: which mac++
-/// this is, then mac++'s own settings (Accessibility, Open at login, the menu's Size). Settings is for mac++ only:
-/// each tool's settings, its main switch among them, are on its page of the menu.
+/// this is, mac++'s own settings (Accessibility, Open at login, the menu's Size), then a row for each
+/// tool that opens its settings page. Each tool's main switch stays on its page.
 ///
 /// What explains them is Help, a page of its own: a tool's opens from the ? beside its name on its
 /// page, mac++'s from the ? beside mac++ in Settings. Only the onboarding and the lessons, played
@@ -27,15 +27,25 @@ final class AppSettings: ObservableObject {
         var close: () -> Void
     }
 
+    /// A tool's row in Settings: its name and mark, and the page of its settings.
+    struct ToolLink {
+        let name: String
+        let logo: (CGFloat) -> AnyView
+        let page: String
+    }
+
     /// Each tool's Help, in the order of their pages (for the Help pages).
     let tools: [HelpContent]
+    /// Each tool's settings, in the order of their pages.
+    let toolLinks: [ToolLink]
     private let actions: Actions
     @Published private(set) var granted = AXIsProcessTrusted()
     @Published private(set) var openAtLogin = LoginItem.isEnabled
     @Published private(set) var size = MenuSize.current
 
-    init(tools: [HelpContent], actions: Actions) {
+    init(tools: [HelpContent], toolLinks: [ToolLink], actions: Actions) {
         self.tools = tools
+        self.toolLinks = toolLinks
         self.actions = actions
     }
 
@@ -103,7 +113,7 @@ final class AppSettings: ObservableObject {
             .init("menubar.rectangle", "One icon, one menu",
                   "Click the apple in the menu bar. Each tool has a page of the menu; switch between them at its top. The ? beside a tool's name opens its Help."),
             .init("gearshape", "Settings",
-                  "At the foot of the menu, for the whole app: Accessibility and Open at login. Each tool's own settings are on its page."),
+                  "At the foot of the menu: Accessibility, Open at login and the menu's size, then each tool's own settings, under Apps."),
             .init("hand.raised", "Accessibility",
                   "Moving windows and seeing keys both need it. One grant, in System Settings, covers both tools."),
             .init("power", "Quit mac++",
@@ -128,7 +138,7 @@ final class AppSettings: ObservableObject {
 // MARK: - The page
 
 /// Settings: which mac++ this is (its ? opens mac++'s Help), Accessibility, Open at login and how big
-/// the menu is drawn.
+/// the menu is drawn, then each tool's settings, a page each.
 private struct SettingsPage: View {
     @ObservedObject var settings: AppSettings
 
@@ -154,6 +164,13 @@ private struct SettingsPage: View {
                         ForEach(MenuSize.allCases, id: \.self) { Text($0.title).tag($0) }
                     }
                     .pickerStyle(.segmented).controlSize(.small).labelsHidden().fixedSize()
+                }
+            }
+            if !settings.toolLinks.isEmpty {
+                SettingsSection("Apps") {
+                    ForEach(settings.toolLinks, id: \.page) { tool in
+                        SettingsLink(icon: tool.logo(22), tool.name) { settings.open(tool.page) }
+                    }
                 }
             }
         }

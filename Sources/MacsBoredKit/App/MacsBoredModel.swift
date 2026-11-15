@@ -186,6 +186,12 @@ final class MacsBoredModel: ObservableObject {
         if let wanted = config.openAtLogin, wanted != LoginItem.isEnabled { LoginItem.setEnabled(wanted) }
     }
 
+    /// Caps Lock as Hyper (`capsLockAsHyper`), applied at once.
+    func setHyperKey(_ on: Bool) {
+        update { $0.hyperKeyEnabled = on }
+        applyHyper()
+    }
+
     private func applyHyper() {
         let outcome = HyperKeyMapping.set(config.isEnabled && config.hyperKeyEnabled)
         hyperBlocked = outcome == .blockedByOtherMapping

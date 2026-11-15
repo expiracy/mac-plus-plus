@@ -2,18 +2,17 @@
 import AppKit
 import SwiftUI
 
-/// A tool's page of the dropdown, drawn the same for every tool: what the tool is doing with its Help
-/// and main switch (its mark and name too, unless the switcher above shows them); then rounded cards,
-/// each under a small title: what is happening now with its one button, any warning with its fix, the
-/// titled lists, and the general switches. Rows lead with a tinted icon tile, an app's icon or a
-/// drawing of the tool's own. A long list scrolls inside its card, and a row of a list that can be
-/// reordered is dragged by its picture: the other rows slide aside (VoiceOver finds Move up and Move
-/// down among the row's actions). A row ends with its keys, its pencil and bin, then its switch. The
-/// dropdown around it adds the switcher, the bubble and the footer shared by every page.
+/// A tool's page of the dropdown, drawn the same for every tool: the tool's mark and name with what it
+/// is doing, its Help and its main switch; then rounded cards, each under a title that folds it: what
+/// is happening now with its one button, any warning with its fix, the titled lists, and the general
+/// switches. Rows lead with a tinted icon tile, an app's icon or a drawing of the tool's own. A long
+/// list scrolls inside its card, and a row of a list that can be reordered is dragged by its picture:
+/// the other rows slide aside (VoiceOver finds Move up and Move down among the row's actions). A row
+/// ends with its keys, its pencil and bin, then its switch. The dropdown around it adds the switcher,
+/// the bubble and the footer shared by every page.
 public struct MenuPageView: View {
     @ObservedObject var model: MenuPageModel
     @Environment(\.openHelp) private var openHelp
-    @Environment(\.pageNamedAbove) private var namedAbove
     @State private var hoveredRow: String?
     @State private var hoveredTrash: String?
     @State private var hoveredAdd: String?
@@ -131,25 +130,11 @@ public struct MenuPageView: View {
 
     /// The tool's name and mark with what it is doing, its Help and its main switch. Under the
     /// dropdown's switcher, which shows the name and mark already, only what it is doing.
-    @ViewBuilder private func header(_ content: MenuPageContent) -> some View {
-        let line = content.liveFact ?? content.primary?.title
-        if namedAbove {
-            HStack(spacing: 6) {
-                if let line {
-                    Text(line).font(.callout).foregroundStyle(.secondary).lineLimit(2)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .accessibilityLabel("\(model.brand.name): \(line)")
-                        .accessibilityAddTraits(.isHeader)
-                }
-                if let openHelp { HelpButton(subject: model.brand.name, action: openHelp) }
-                Spacer(minLength: 4)
-                mainSwitch(content)
-            }
-            .padding(.horizontal, 4)
-        } else {
-            PageHeader(logo: model.brand.logo(32), title: model.brand.name, line: line, help: openHelp) {
-                mainSwitch(content)
-            }
+    /// The tool's mark and name with what it is doing, its Help, and its main switch.
+    private func header(_ content: MenuPageContent) -> some View {
+        PageHeader(logo: model.brand.logo(32), title: model.brand.name,
+                   line: content.liveFact ?? content.primary?.title, help: openHelp) {
+            mainSwitch(content)
         }
     }
 
@@ -555,18 +540,18 @@ public struct MenuPageView: View {
 
     private func chevron(folded: Bool) -> some View {
         Image(systemName: "chevron.right")
-            .font(.system(size: 9, weight: .bold))
+            .font(.system(size: 10, weight: .bold))
             .foregroundStyle(.secondary)
             .rotationEffect(.degrees(folded ? 0 : 90))
-            .frame(width: 10)
+            .frame(width: 12)
     }
 
     private func sectionTitleButton(_ title: String, count: Int, folded: Bool) -> some View {
         Button { model.toggleCollapsed(title, isEmpty: count == 0) } label: {
-            HStack(spacing: 4) {
+            HStack(spacing: 5) {
                 chevron(folded: folded)
-                Text(title).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-                if folded { Text("· \(count)").font(.caption).foregroundStyle(.tertiary) }
+                Text(title).font(.subheadline.weight(.semibold)).foregroundStyle(.primary.opacity(0.8))
+                if folded { Text("\(count)").font(.caption.weight(.medium)).foregroundStyle(.secondary) }
             }
             .contentShape(Rectangle())
         }
@@ -575,7 +560,6 @@ public struct MenuPageView: View {
         .accessibilityLabel(title)
         .accessibilityValue(folded ? "Collapsed" : "Expanded")
     }
-
 
     private func card<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
         VStack(spacing: 0) { content() }

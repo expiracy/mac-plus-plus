@@ -4,13 +4,13 @@ import AppKit
 import SwiftUI
 import MacsPaneCore
 
-/// MacsPane's page of mac++'s dropdown, and with it everything MacsPane lets you change. The switch
-/// beside the name is snapping itself; then your presets (click to apply, pencil to edit, trash to
-/// delete), every layout with its switch for the notch picker, every shortcut in one list, and under
-/// them how long to hold a window on the notch before the picker opens. Long lists scroll in place,
-/// and the presets and layouts can be dragged into the order you want by their pictures. Presets and
-/// layouts are made, changed and deleted in the box editor. Accessibility and Open at login belong to the whole app
-/// (the dropdown's banner and Settings).
+/// MacsPane's page of mac++'s dropdown. The switch beside the name is snapping itself; then your
+/// presets (click to apply, pencil to edit, trash to delete), every layout with its switch for the
+/// notch picker, and every shortcut in one list. Long lists scroll in place, and the presets and
+/// layouts can be dragged into the order you want by their pictures. Presets and layouts are made,
+/// changed and deleted in the box editor. How long to hold a window on the notch is MacsPane's page of
+/// mac++'s Settings; Accessibility and Open at login belong to the whole app (the dropdown's banner
+/// and Settings).
 enum MacsPaneMenu {
     static let brand = MenuPageBrand(name: "MacsPane", logo: { AnyView(MacsPaneLogo(size: $0)) })
 
@@ -27,14 +27,6 @@ enum MacsPaneMenu {
             row.trailing = issue.message
             content.warnings = [row]
         }
-        content.toggles = [
-            // How long a dragged window rests on the notch before the picker opens.
-            .choice("Hold for", symbol: "timer",
-                    options: MacsPaneConfig.dwellChoices.map(Self.seconds),
-                    selected: model.config.dwellChoiceIndex) { [weak model] index in
-                model?.setDwell(MacsPaneConfig.dwellChoices[index])
-            },
-        ]
         content.groups = [presetGroup(model), layoutGroup(model), shortcutGroup(model)]
         content.renaming = model.renaming
         return content

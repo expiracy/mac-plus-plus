@@ -162,11 +162,12 @@ final class TabbedMenuModel: ObservableObject {
         if now != banner { banner = now }
     }
 
-    /// Open the page called `name` over what shows now, the tool's own or the app's; one already open
-    /// under it is gone back to instead.
+    /// Open the page called `name` over what shows now: the showing tool's own, another tool's (its
+    /// settings, from Settings) or the app's; one already open under it is gone back to instead.
     func open(_ name: String) {
         if let index = stack.firstIndex(where: { $0.name == name }) { back(to: index + 1); return }
-        guard let subpage = current.subpage(name) ?? actions.page(name) else { return }
+        guard let subpage = current.subpage(name) ?? tabs.lazy.compactMap({ $0.subpage(name) }).first
+                ?? actions.page(name) else { return }
         if stack.isEmpty { current.willHide() }
         subpage.refresh()
         stack.append(TabbedMenuPage(name: name, subpage: subpage))
@@ -498,7 +499,6 @@ struct TabbedMenuView: View {
                 }
                 model.current.page()
                     .environment(\.openHelp) { model.open(TabbedMenuPage.help(for: model.current.title)) }
-                    .environment(\.pageNamedAbove, model.tabs.count > 1)
                     .id(model.selected)
                 footer
             }
