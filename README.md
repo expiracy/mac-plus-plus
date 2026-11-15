@@ -11,7 +11,7 @@ Two menu-bar tools for macOS in one app, behind one icon.
 mac++'s mark is an apple with "++" inside. Click it in the menu bar and the dropdown opens on the page
 you used last. The switcher along its top moves between MacsPane and MacsBored (⌘1 and ⌘2 do the
 same). Each page is that tool's own menu, drawn the same way for both: its main switch, what it is doing
-now, its settings, and its lists, each with a + on its title to make a new one. Click a section's title to fold it; each page
+now, its settings, and its lists, each with *+ Add* on its title to make a new one. Click a section's title to fold it; each page
 remembers what is folded. The foot of the dropdown belongs to the
 whole app:
 
@@ -143,7 +143,7 @@ identifier would get it too, so use a Developer ID before a wide release.
 
 | Target | What it holds |
 |---|---|
-| `MacsShared` | What both tools are built from, so they look and behave alike: the tabbed dropdown under the menu-bar icon (`TabbedMenuController`) with its app-wide footer; the page every tool's menu is drawn by (`MenuPageView`, fed a `MenuPageContent`); the cards, tiles, rows and lesson steps every window uses; the pages opened over a tool's page with their navigation bar, and the System Settings-style rows they are made of (`SettingsSection`, `SettingsLink`…); the onboarding window (`OnboardingView`, made of each tool's `OnboardingPart`); the window controller; Open at login; and mac++'s logo. |
+| `MacsShared` | What both tools are built from, so they look and behave alike: the tabbed dropdown under the menu-bar icon (`TabbedMenuController`) with its app-wide footer under each tool's page; the page every tool's menu is drawn by (`MenuPageView`, fed a `MenuPageContent`); the cards, tiles, rows and lesson steps every window uses; the pages opened over a tool's page with their navigation bar, and the System Settings-style rows they are made of (`SettingsSection`, `SettingsLink`…); the onboarding window (`OnboardingView`, made of each tool's `OnboardingPart`); the window controller; Open at login; and mac++'s logo. |
 | `MacsSettings` | What both settings files share: keys as text (`ctrl+opt+left`) and a JSON reader that knows each value's line, for `check`. No AppKit. |
 | `MacsPaneCore`, `MacsPaneKit` | MacsPane: pure logic with its tests, then the app (`MacsPaneFeature`). |
 | `MacsBoredCore`, `MacsBoredKit` | MacsBored: pure logic with its tests, then the app (`MacsBoredFeature`). |

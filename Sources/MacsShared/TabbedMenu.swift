@@ -437,7 +437,8 @@ private struct ScaledLayout: Layout {
 /// The dropdown: a bubble whose nub points up at the menu-bar icon, the switcher across its top
 /// (each tool's mark and name, the page showing picked out), any app-wide warning, that tool's page,
 /// then the footer that belongs to the whole app: Settings and Quit mac++.
-/// Settings and Help open in the same space, a navigation bar in the switcher's place.
+/// Settings, Help and a tool's own pages open in the same space, a navigation bar in the switcher's
+/// place and no footer: back is the way out, and ⌘, and ⌘Q still work.
 struct TabbedMenuView: View {
     @ObservedObject var model: TabbedMenuModel
     @State private var hovered: Int?
@@ -453,10 +454,10 @@ struct TabbedMenuView: View {
     }
 
     /// The tallest a page opened over a tool's page draws before it scrolls: the screen's height,
-    /// less the navigation bar and page header (about 110 pt), the footer (about 55), the nub and a
-    /// margin, in the view's own points at the Size chosen.
+    /// less the navigation bar and page header (about 110 pt), the nub and a margin, in the view's own
+    /// points at the Size chosen.
     private var subpageMaxHeight: CGFloat {
-        max(300, ((NSScreen.main?.visibleFrame.height ?? 800) - 220) / model.scale)
+        max(300, ((NSScreen.main?.visibleFrame.height ?? 800) - 165) / model.scale)
     }
 
     var body: some View {
@@ -497,9 +498,10 @@ struct TabbedMenuView: View {
                 }
                 model.current.page()
                     .environment(\.openHelp) { model.open(TabbedMenuPage.help(for: model.current.title)) }
+                    .environment(\.pageNamedAbove, model.tabs.count > 1)
                     .id(model.selected)
+                footer
             }
-            footer
         }
         .padding(.top, SpeechBubbleShape.standardNub.height)
         .frame(width: Metric.width)

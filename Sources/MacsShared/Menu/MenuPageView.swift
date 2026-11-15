@@ -2,24 +2,28 @@
 import AppKit
 import SwiftUI
 
-/// A tool's page of the dropdown, drawn the same for every tool: the tool's mark, name and main
-/// switch; then rounded cards, each under a small title: what is happening now with its one button,
-/// any warning with its fix, the general switches, and the titled lists. Rows lead with a tinted icon
-/// tile, an app's icon or a drawing of the tool's own. A long list scrolls inside its card, and a list
-/// that can be reordered has a grip on every row: drag it and the other rows slide aside. The
+/// A tool's page of the dropdown, drawn the same for every tool: what the tool is doing with its Help
+/// and main switch (its mark and name too, unless the switcher above shows them); then rounded cards,
+/// each under a small title: what is happening now with its one button, any warning with its fix, the
+/// titled lists, and the general switches. Rows lead with a tinted icon tile, an app's icon or a
+/// drawing of the tool's own. A long list scrolls inside its card, and a row of a list that can be
+/// reordered is dragged by its picture: the other rows slide aside (VoiceOver finds Move up and Move
+/// down among the row's actions). A row ends with its keys, its pencil and bin, then its switch. The
 /// dropdown around it adds the switcher, the bubble and the footer shared by every page.
 public struct MenuPageView: View {
     @ObservedObject var model: MenuPageModel
     @Environment(\.openHelp) private var openHelp
+    @Environment(\.pageNamedAbove) private var namedAbove
     @State private var hoveredRow: String?
     @State private var hoveredTrash: String?
+    @State private var hoveredAdd: String?
     @State private var drag: RowDrag?
 
     public init(model: MenuPageModel) {
         self.model = model
     }
 
-    /// The row being dragged by its grip: which list, where it started, and how far the pointer has gone.
+    /// The row being dragged by its picture: which list, where it started, and how far the pointer has gone.
     private struct RowDrag: Equatable {
         let group: String
         let from: Int
@@ -45,10 +49,11 @@ public struct MenuPageView: View {
             header(content)
             if !content.live.isEmpty || model.brand.emptyLive != nil { liveCard(content.live) }
             ForEach(content.warnings) { warningCard($0) }
+            ForEach(content.groups) { groupCard($0) }
+            // Set once and left: under the lists, which are what the page is opened for.
             if !content.toggles.isEmpty {
                 section(model.brand.togglesTitle, count: content.toggles.count) { rows(content.toggles) }
             }
-            ForEach(content.groups) { groupCard($0) }
         }
         .padding(Metric.edge)
         .overlayPreferenceValue(SubmenuAnchorKey.self) { anchors in submenuLayer(anchors) }
@@ -124,12 +129,33 @@ public struct MenuPageView: View {
 
     // MARK: - Bands
 
-    private func header(_ content: MenuPageContent) -> some View {
-        PageHeader(logo: model.brand.logo(32), title: model.brand.name,
-                   line: content.liveFact ?? content.primary?.title, help: openHelp) {
-            if let primary = content.primary, case let .toggle(isOn, _, _) = primary.kind {
-                switchControl(primary, isOn: isOn)
+    /// The tool's name and mark with what it is doing, its Help and its main switch. Under the
+    /// dropdown's switcher, which shows the name and mark already, only what it is doing.
+    @ViewBuilder private func header(_ content: MenuPageContent) -> some View {
+        let line = content.liveFact ?? content.primary?.title
+        if namedAbove {
+            HStack(spacing: 6) {
+                if let line {
+                    Text(line).font(.callout).foregroundStyle(.secondary).lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityLabel("\(model.brand.name): \(line)")
+                        .accessibilityAddTraits(.isHeader)
+                }
+                if let openHelp { HelpButton(subject: model.brand.name, action: openHelp) }
+                Spacer(minLength: 4)
+                mainSwitch(content)
             }
+            .padding(.horizontal, 4)
+        } else {
+            PageHeader(logo: model.brand.logo(32), title: model.brand.name, line: line, help: openHelp) {
+                mainSwitch(content)
+            }
+        }
+    }
+
+    @ViewBuilder private func mainSwitch(_ content: MenuPageContent) -> some View {
+        if let primary = content.primary, case let .toggle(isOn, _, _) = primary.kind {
+            switchControl(primary, isOn: isOn)
         }
     }
 
@@ -223,14 +249,15 @@ public struct MenuPageView: View {
     // MARK: - Cards and rows
 
     /// Rows separated by hairlines across the card. In a list that can be reordered (`group.move`),
-    /// each row leads with a grip; while one is dragged the lines step aside so nothing is left behind.
+    /// a row is dragged by its picture; while one is dragged the lines step aside so nothing is left
+    /// behind.
     private func rows(_ entries: [MenuEntry], in group: MenuGroup? = nil) -> some View {
         let movable = group?.move != nil && entries.count > 1 ? group : nil
         let dragging = movable != nil && drag?.group == movable?.id
         return VStack(spacing: 0) {
             ForEach(Array(entries.enumerated()), id: \.element.id) { index, entry in
                 let lifted = dragging && drag?.from == index
-                row(entry, grip: movable.map { grip(entry, index: index, count: entries.count, in: $0) })
+                row(entry, handle: movable.map { RowHandle(group: $0, index: index, count: entries.count) })
                     .id(entry.id)
                     .overlay(alignment: .top) {
                         if index > 0 && !dragging { Divider() }
@@ -268,70 +295,83 @@ public struct MenuPageView: View {
         return 0
     }
 
-    /// The handle a row is dragged by: faint until its row is under the pointer. Move up and Move down
-    /// do the same for VoiceOver.
-    private func grip(_ entry: MenuEntry, index: Int, count: Int, in group: MenuGroup) -> some View {
-        let active = hoveredRow == entry.id || drag?.group == group.id && drag?.from == index
-        return Image(systemName: "line.3.horizontal")
-            .font(.system(size: 10, weight: .semibold))
-            .foregroundStyle(Color.secondary.opacity(active ? 0.9 : 0.35))
-            .frame(width: 18, height: Metric.row)
-            .contentShape(Rectangle())
-            .onHover { inside in
-                if inside { NSCursor.openHand.push() } else { NSCursor.pop() }
-            }
-            .gesture(DragGesture(minimumDistance: 2, coordinateSpace: .global)
-                .onChanged { value in
-                    if drag == nil { NSCursor.closedHand.push() }
-                    drag = RowDrag(group: group.id, from: index, height: value.translation.height)
-                }
-                .onEnded { _ in
-                    guard let current = drag else { return }
-                    NSCursor.pop()
-                    let to = target(current, count: count)
-                    withAnimation(.easeOut(duration: 0.15)) {
-                        drag = nil
-                        if to != current.from { model.move(group, from: current.from, to: to) }
-                    }
-                })
-            .help("Drag to reorder")
-            .accessibilityLabel("Reorder \(entry.title)")
-            .accessibilityAction(named: "Move up") {
-                if index > 0 { model.move(group, from: index, to: index - 1) }
-            }
-            .accessibilityAction(named: "Move down") {
-                if index < count - 1 { model.move(group, from: index, to: index + 1) }
-            }
+    /// Moving a row one place up or down, for VoiceOver (the pointer drags the row's picture).
+    private func moves(_ handle: RowHandle?) -> RowMoves? {
+        guard let handle else { return nil }
+        let (group, index, count) = (handle.group, handle.index, handle.count)
+        return RowMoves(up: index > 0 ? { model.move(group, from: index, to: index - 1) } : nil,
+                        down: index < count - 1 ? { model.move(group, from: index, to: index + 1) } : nil)
     }
 
-    @ViewBuilder private func row(_ entry: MenuEntry, grip: (some View)? = Optional<EmptyView>.none) -> some View {
+    /// A row's picture, which drags the row when its list can be reordered: an open hand under the
+    /// pointer, a closed one while dragging. A click (no drag) runs `tap`, as clicking the row would.
+    @ViewBuilder
+    private func picture(_ entry: MenuEntry, tint: Color, handle: RowHandle?, tap: (() -> Void)? = nil) -> some View {
+        if let handle {
+            icon(entry, tint: tint)
+                .contentShape(Rectangle())
+                .onHover { inside in
+                    if inside { NSCursor.openHand.push() } else { NSCursor.pop() }
+                }
+                .onTapGesture { tap?() }
+                .gesture(DragGesture(minimumDistance: 2, coordinateSpace: .global)
+                    .onChanged { value in
+                        if drag == nil { NSCursor.closedHand.push() }
+                        drag = RowDrag(group: handle.group.id, from: handle.index, height: value.translation.height)
+                    }
+                    .onEnded { _ in
+                        guard let current = drag else { return }
+                        NSCursor.pop()
+                        let to = target(current, count: handle.count)
+                        withAnimation(.easeOut(duration: 0.15)) {
+                            drag = nil
+                            if to != current.from { model.move(handle.group, from: current.from, to: to) }
+                        }
+                    })
+                .help("Drag to reorder")
+                .accessibilityHidden(true)
+        } else {
+            icon(entry, tint: tint)
+        }
+    }
+
+    /// The end of a row, before its switch: its keys, then its pencil and bin.
+    private func rowEnd(_ entry: MenuEntry, dim: Bool) -> some View {
+        HStack(spacing: 4) {
+            if let trailing = entry.trailing {
+                Text(trailing).font(.callout.monospacedDigit())
+                    .foregroundStyle(dim ? AnyShapeStyle(.tertiary) : AnyShapeStyle(.secondary))
+                    .lineLimit(1)
+                    .fixedSize()
+                    .accessibilityLabel(entry.trailingLabel.map { "\($0) \(trailing)" } ?? trailing)
+            }
+            HStack(spacing: 0) {
+                if let secondary = entry.secondary {
+                    secondaryButton(entry, secondary, hovered: hoveredRow == entry.id)
+                }
+                if entry.trash != nil { trashButton(entry) }
+            }
+        }
+    }
+
+    @ViewBuilder private func row(_ entry: MenuEntry, handle: RowHandle? = nil) -> some View {
         switch entry.kind {
         case .section:
             Text(entry.title).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
         case let .toggle(isOn, disabled, _):
             HStack(spacing: 10) {
-                if let grip { grip.padding(.trailing, -4) }
-                icon(entry, tint: .secondary)
+                picture(entry, tint: .secondary, handle: handle)
                 if renaming(entry) {
                     MenuNameField(model: model, title: entry.title)
                 } else {
                     Text(entry.title).lineLimit(1).truncationMode(.tail)
+                        .modifier(RowActions(moves: moves(handle)))
                     Spacer(minLength: 4)
-                    if let trailing = entry.trailing {
-                        Text(trailing).font(.callout.monospacedDigit())
-                            .foregroundStyle(isOn ? AnyShapeStyle(.secondary) : AnyShapeStyle(.tertiary))
-                            .lineLimit(1)
-                            .accessibilityLabel(entry.trailingLabel.map { "\($0) \(trailing)" } ?? trailing)
-                    }
-                    if let secondary = entry.secondary {
-                        secondaryButton(entry, secondary, hovered: hoveredRow == entry.id)
-                    }
-                    if entry.trash != nil { trashButton(entry).padding(.leading, -8) }
+                    rowEnd(entry, dim: !isOn)
                 }
                 switchControl(entry, isOn: isOn)
             }
-            .padding(.leading, grip == nil ? 10 : 4)
-            .padding(.trailing, 10)
+            .padding(.horizontal, 10)
             .frame(height: Metric.row)
             .background(Color.primary.opacity(hoveredRow == entry.id ? 0.04 : 0))
             .onHover { hover(entry, $0) }
@@ -349,66 +389,56 @@ public struct MenuPageView: View {
             .padding(.horizontal, 10)
             .frame(height: Metric.row)
         case let .command(danger):
-            commandRow(entry, danger: danger, grip: grip)
+            commandRow(entry, danger: danger, handle: handle)
         case .live, .warning:
             EmptyView()
         }
     }
 
     /// A row you click: the whole line is the target and lights under the pointer. A command that adds
-    /// something ("New preset…", a plus or a symbol badged with one) is drawn in the accent, like the app's other primary actions. A
-    /// second button (Edit) sits at the end.
+    /// something ("New preset…", a plus or a symbol badged with one) is drawn in the accent, like the
+    /// app's other primary actions. Its keys, then its pencil and bin, sit at the end.
     /// The row just added and being named shows its name field in place of the title and buttons.
-    private func commandRow(_ entry: MenuEntry, danger: Bool, grip: (some View)?) -> some View {
+    private func commandRow(_ entry: MenuEntry, danger: Bool, handle: RowHandle?) -> some View {
         let hovered = hoveredRow == entry.id
         let adds = (entry.symbol == "plus" || entry.symbol?.hasSuffix(".badge.plus") == true) && entry.leadsWithSymbol
+        let tint: Color = adds ? .accentColor : .secondary
         if renaming(entry) {
             return AnyView(HStack(spacing: 10) {
-                if let grip { grip.padding(.trailing, -4) }
-                icon(entry, tint: .secondary)
+                picture(entry, tint: tint, handle: handle)
                 MenuNameField(model: model, title: entry.title)
             }
-            .padding(.leading, grip == nil ? 10 : 4)
-            .padding(.trailing, 10)
+            .padding(.horizontal, 10)
             .frame(height: Metric.row))
         }
+        // A row that drags keeps its picture out of the button, so a drag never clicks it.
         let label = HStack(spacing: 10) {
-            icon(entry, tint: adds ? .accentColor : .secondary)
+            if handle == nil { icon(entry, tint: tint) }
             Text(entry.title).lineLimit(1).truncationMode(.tail)
                 .fontWeight(adds ? .medium : .regular)
                 .foregroundStyle(danger ? AnyShapeStyle(.red) : adds ? AnyShapeStyle(Color.accentColor)
                                  : AnyShapeStyle(.primary))
-            Spacer(minLength: 0)
-            if let trailing = entry.trailing {
-                Text(trailing).font(.callout.monospacedDigit()).foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .padding(.trailing, 4)
-                    .accessibilityLabel(entry.trailingLabel.map { "\($0) \(trailing)" } ?? trailing)
-            }
+            Spacer(minLength: 4)
         }
-        .padding(.leading, grip == nil ? 10 : 6)
+        .padding(.leading, handle == nil ? 10 : 0)
         .frame(maxHeight: .infinity)
         .contentShape(Rectangle())
         return AnyView(HStack(spacing: 0) {
-            if let grip { grip.padding(.leading, 4) }
+            if handle != nil {
+                picture(entry, tint: tint, handle: handle) { model.run(entry) }
+                    .padding(.leading, 10).padding(.trailing, 10)
+            }
             if entry.submenu.isEmpty {
                 Button { model.run(entry) } label: { label }
                     .buttonStyle(.plain)
+                    .modifier(RowActions(moves: moves(handle)))
             } else {
                 // A choice of how: its choices hang under the row in a bubble (`submenuLayer`).
                 Button { withAnimation(.bouncy(duration: 0.25)) { model.toggleSubmenu(entry) } } label: { label }
                     .buttonStyle(.plain)
                     .anchorPreference(key: SubmenuAnchorKey.self, value: .bounds) { [entry.id: $0] }
             }
-            if let secondary = entry.secondary {
-                secondaryButton(entry, secondary, hovered: hovered)
-                    .padding(.trailing, entry.trash == nil ? 6 : 0)
-            }
-            if entry.trash != nil {
-                trashButton(entry).padding(.trailing, 6)
-            } else if entry.secondary == nil {
-                Spacer().frame(width: 10)
-            }
+            rowEnd(entry, dim: false).padding(.trailing, 10)
         }
         .frame(height: Metric.row)
         .background(Color.primary.opacity(hovered ? 0.06 : 0))
@@ -493,21 +523,30 @@ public struct MenuPageView: View {
         }
     }
 
-    /// The + at the end of a section's title: it opens the section, then makes a new row (or opens
-    /// its choices, in a bubble hanging from the +).
+    /// "+ Add" at the end of a section's title, on a grey capsule like the Back button's: it opens the
+    /// section, then makes a new row (or opens its choices, in a bubble hanging from it). The capsule
+    /// deepens under the pointer and while its choices are open.
     @ViewBuilder
     private func addButton(_ add: MenuEntry, section title: String, count: Int, folded: Bool) -> some View {
+        let hot = hoveredAdd == add.id || model.openSubmenu == add.id
         let button = Button {
             if folded { model.toggleCollapsed(title, isEmpty: count == 0) }
             if add.submenu.isEmpty { model.run(add) }
             else { withAnimation(.bouncy(duration: 0.25)) { model.toggleSubmenu(add) } }
         } label: {
-            Image(systemName: "plus").font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(Color.accentColor)
-                .frame(width: 22, height: 18)
-                .contentShape(Rectangle())
+            HStack(spacing: 3) {
+                Image(systemName: "plus").font(.system(size: 9, weight: .bold))
+                Text("Add").font(.caption.weight(.medium))
+            }
+            .foregroundStyle(.primary)
+            .padding(.horizontal, 8)
+            .frame(height: 20)
+            .background(Capsule().fill(Color.primary.opacity(hot ? 0.12 : 0.07)))
+            .contentShape(Capsule())
+            .animation(.easeOut(duration: 0.12), value: hot)
         }
         .buttonStyle(.plain)
+        .onHover { inside in hoveredAdd = inside ? add.id : (hoveredAdd == add.id ? nil : hoveredAdd) }
         .help(add.title)
         .accessibilityLabel(add.title)
         if add.submenu.isEmpty { button }
@@ -564,6 +603,31 @@ public struct MenuPageView: View {
         case .symbol:
             IconTile(symbol: entry.symbol ?? "circle", tint: tint, size: Metric.tile)
                 .frame(width: Metric.tile + 2)
+        }
+    }
+}
+
+/// A row of a list that can be reordered: which list, and where in it.
+private struct RowHandle {
+    let group: MenuGroup
+    let index: Int
+    let count: Int
+}
+
+/// Moving a row of a reorderable list one place; nil at that end of the list.
+private struct RowMoves {
+    let up: (() -> Void)?
+    let down: (() -> Void)?
+}
+
+/// Moving a row of a reorderable list, as VoiceOver actions on its name: the pointer drags its picture.
+private struct RowActions: ViewModifier {
+    let moves: RowMoves?
+
+    func body(content: Content) -> some View {
+        content.accessibilityActions {
+            if let up = moves?.up { Button("Move up", action: up) }
+            if let down = moves?.down { Button("Move down", action: down) }
         }
     }
 }

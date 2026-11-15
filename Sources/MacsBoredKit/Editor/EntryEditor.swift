@@ -28,15 +28,13 @@ struct EntryEditor: View {
         VStack(alignment: .leading, spacing: 14) {
             identity
             if [.remap, .open, .shortcut].contains(draft.tab) { whatItDoes }
-            if draft.isPassthroughApp { passthroughApp } else { whereGroup }
-            FormGroup(title: "When") {
-                if draft.conditions.conditions.isEmpty {
-                    FormRow(divider: false) {
-                        Text(draft.isPassthroughApp ? "Whenever one of these apps is in front" : "Always")
-                            .foregroundStyle(.secondary)
-                    }
+            if draft.isPassthroughApp {
+                passthroughApp
+                FormGroup(title: "When") {
+                    ConditionRows(conditions: $state.draft.conditions, empty: "Whenever one of these apps is in front")
                 }
-                ConditionRows(conditions: $state.draft.conditions)
+            } else {
+                whereAndWhen
             }
         }
         .padding(12)
@@ -332,8 +330,9 @@ struct EntryEditor: View {
 
     // MARK: - Where (triggers) and the passthrough app
 
-    private var whereGroup: some View {
-        FormGroup(title: "Where") {
+    /// Where a trigger works, then when: one card, the conditions under the apps.
+    private var whereAndWhen: some View {
+        FormGroup(title: "Where and when") {
             FormRow(label: "Works", divider: false) {
                 Picker("Works", selection: $state.draft.onlyInApps) {
                     Text("Everywhere").tag(false)
@@ -347,6 +346,7 @@ struct EntryEditor: View {
                     AppChips(apps: $state.draft.apps, suggestions: runningApps, suggestionsTitle: "Open now", stepAway: stepAway)
                 }
             }
+            ConditionRows(conditions: $state.draft.conditions, label: "When", empty: "Always", dividedFromAbove: true)
         }
     }
 

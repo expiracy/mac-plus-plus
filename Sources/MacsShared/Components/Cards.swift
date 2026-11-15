@@ -114,6 +114,9 @@ extension EnvironmentValues {
     /// Set by the dropdown on a page opened over a tool's page: runs something that leaves the
     /// dropdown for a moment (a modal file chooser) with the dropdown hidden, and brings it back after.
     @Entry public var stepAway: (() -> Void) -> Void = { $0() }
+    /// Set by the dropdown when its switcher already shows the tool's mark and name over its page, so
+    /// the page doesn't say them again.
+    @Entry public var pageNamedAbove = false
 }
 
 /// A rounded, faintly filled panel around its content, padded.

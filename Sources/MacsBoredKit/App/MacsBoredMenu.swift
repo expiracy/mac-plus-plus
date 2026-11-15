@@ -108,6 +108,10 @@ enum MacsBoredMenu {
                                    trash: ("Delete \(trigger.name)", { [weak model] in model?.deleteTrigger(trigger.id) })) {
             [weak model] in model?.toggleTrigger(trigger.id)
         }
+        // A quick open shows the app it opens.
+        if case let .openApp(app) = trigger.action, let icon = AppIcons.icon(bundleID: app.bundleID) {
+            row.leading = .appIcon(icon)
+        }
         row.trailing = trigger.keys.isEmpty ? "No keys"
             : trigger.keys.count == 1 ? trigger.keys[0].displayName
             : "\(trigger.keys[0].displayName) +\(trigger.keys.count - 1)"

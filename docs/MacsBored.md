@@ -14,7 +14,7 @@ app and macOS has them back. Alongside that it runs your own shortcuts, BetterTo
 
 - **Passthrough apps.** Each names the apps it covers, when it acts, and which of macOS's shortcuts go
   to the app instead: the app switcher, Spotlight, Mission Control, Spaces, screenshots, input sources,
-  the Dock and Notification Centre, keyboard navigation, Zoom and Help search. The + beside *Passthrough*
+  the Dock and Notification Centre, keyboard navigation, Zoom and Help search. *Add* beside *Passthrough*
   adds one; onboarding offers any remote-desktop app installed on first run.
 - **Conditions.** A passthrough or trigger can wait for any of these: the window is full screen, the
   window fills the screen, the window title contains some text, an external display is connected, the
@@ -39,7 +39,7 @@ app and macOS has them back. Alongside that it runs your own shortcuts, BetterTo
   off with `null`.
 
 Everything else MacsBored lets you change is on its page of mac++'s menu, a section for each thing it
-makes: Passthrough, Key remaps, Quick opens and Shortcuts to run. The + on each title opens the
+makes: Passthrough, Key remaps, Quick opens and Shortcuts to run. *Add* on each title opens the
 editor on that kind, as a page of the menu itself ("New Key Remap", with Cancel and Save kept in view
 under it), and the pencil on a row opens it on that entry. Open at login and Accessibility belong to the whole app, in mac++'s
 Settings. MacsBored's Help, the ? beside its name at the top of its page, explains each part and can play its lessons again.
