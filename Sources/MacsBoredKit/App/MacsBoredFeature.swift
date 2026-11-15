@@ -135,7 +135,7 @@ enum MacsBoredHelp {
             .init("pause.circle", "Pausing",
                   "\(MacsBoredConfig.defaultPauseKeys.displayName) gives macOS its shortcuts back in the passthrough app in front until you switch apps."),
             .init("keyboard", "Triggers",
-                  "A trigger gives a key a job everywhere: remap keys, open an app, a link or a file, or run a Shortcut. Each kind has its own section; the + on its title makes one."),
+                  "A trigger gives a key a job everywhere: remap keys, open an app, a link or a file, or run a Shortcut. Each kind has its own section; Add on its title makes one."),
             .init("doc.text", "The settings file",
                   "Everything is in one JSON file that MacsBored reloads the moment it changes, so you, a script or an AI agent can edit it. Show the settings file, below, finds it in Finder."),
         ],

@@ -308,35 +308,54 @@ struct AppChips: View {
     }
 }
 
-/// Only-if and unless conditions, any number, combined by all or any.
+/// Only-if and unless conditions, any number, combined by all or any. With none, one row says what
+/// that means (`empty`, "Always") with Add Condition at its end.
 struct ConditionRows: View {
     @Binding var conditions: ConditionSet
+    /// The empty row's label, when the rows share a card with other rows ("When").
+    var label: String? = nil
+    var empty: String
+    /// A hairline over the first row, for rows under others in the same card.
+    var dividedFromAbove = false
 
     var body: some View {
-        ForEach(Array(conditions.conditions.enumerated()), id: \.element.id) { index, condition in
-            FormRow(divider: index > 0) { row(index: index, condition: condition) }
-        }
-        FormRow(divider: !conditions.conditions.isEmpty) {
-            Menu {
-                ForEach(Array(Condition.Kind.templates.enumerated()), id: \.offset) { _, kind in
-                    Button { conditions.conditions.append(Condition(kind)) } label: { Label(kind.title, systemImage: kind.symbol) }
-                }
-            } label: {
-                Label("Add Condition", systemImage: "plus")
+        if conditions.conditions.isEmpty {
+            FormRow(label: label, divider: dividedFromAbove) {
+                Text(empty).foregroundStyle(.secondary).lineLimit(2)
+                Spacer(minLength: 6)
+                addMenu
             }
-            .menuStyle(.button).buttonStyle(.borderless).menuIndicator(.hidden)
-            .foregroundStyle(Color.accentColor)
-            .fixedSize()
-            Spacer()
-            if conditions.conditions.count > 1 {
-                Text("Match").font(.caption).foregroundStyle(.secondary)
-                Picker("Match", selection: $conditions.match) {
-                    Text("All").tag(ConditionMatch.all)
-                    Text("Any").tag(ConditionMatch.any)
+        } else {
+            // Each condition reads on its own ("Only if…", "Unless…") and needs the card's width.
+            ForEach(Array(conditions.conditions.enumerated()), id: \.element.id) { index, condition in
+                FormRow(divider: index > 0 || dividedFromAbove) { row(index: index, condition: condition) }
+            }
+            FormRow(divider: true) {
+                addMenu
+                Spacer()
+                if conditions.conditions.count > 1 {
+                    Text("Match").font(.caption).foregroundStyle(.secondary)
+                    Picker("Match", selection: $conditions.match) {
+                        Text("All").tag(ConditionMatch.all)
+                        Text("Any").tag(ConditionMatch.any)
+                    }
+                    .pickerStyle(.segmented).controlSize(.small).labelsHidden().fixedSize()
                 }
-                .pickerStyle(.segmented).controlSize(.small).labelsHidden().fixedSize()
             }
         }
+    }
+
+    private var addMenu: some View {
+        Menu {
+            ForEach(Array(Condition.Kind.templates.enumerated()), id: \.offset) { _, kind in
+                Button { conditions.conditions.append(Condition(kind)) } label: { Label(kind.title, systemImage: kind.symbol) }
+            }
+        } label: {
+            Label("Add Condition", systemImage: "plus")
+        }
+        .menuStyle(.button).buttonStyle(.borderless).menuIndicator(.hidden)
+        .foregroundStyle(Color.accentColor)
+        .fixedSize()
     }
 
     private func row(index: Int, condition: Condition) -> some View {

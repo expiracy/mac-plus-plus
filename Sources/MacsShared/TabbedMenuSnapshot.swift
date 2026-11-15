@@ -3,7 +3,8 @@ import AppKit
 import SwiftUI
 
 /// Development only: the dropdown drawn offscreen, to look at a change without the menu bar: each
-/// tool's page in each appearance (`menu-<tool>-light.png`, `menu-<tool>-dark.png`) and its Help
+/// tool's page in each appearance (`menu-<tool>-light.png`, `menu-<tool>-dark.png`), each list's +
+/// that offers a choice with its choices open (`menu-<tool>-add-<list>-…`), its Help
 /// (`menu-help-<tool>-…`) and any of its own pages named in `toolPages`, then Settings and each page named in `fromSettings` as it opens from it
 /// (`menu-settings-…`, `menu-settings-<page>-…`).
 public enum TabbedMenuSnapshot {
@@ -29,6 +30,16 @@ public enum TabbedMenuSnapshot {
             model.select(index)
             tabs[index].refresh()
             shoot("menu-\(tabs[index].title.lowercased())")
+            // Each list's + that offers a choice, open.
+            if let page = tabs[index] as? MenuPageTab {
+                for group in page.model.content.groups {
+                    guard let add = group.add, !add.submenu.isEmpty else { continue }
+                    page.model.openSubmenu = add.id
+                    let list = group.title.lowercased().replacingOccurrences(of: " ", with: "-")
+                    shoot("menu-\(tabs[index].title.lowercased())-add-\(list)")
+                    page.model.openSubmenu = nil
+                }
+            }
             // Its Help, from the ? beside its name.
             let help = TabbedMenuPage.help(for: tabs[index].title)
             if pages(help) != nil {
