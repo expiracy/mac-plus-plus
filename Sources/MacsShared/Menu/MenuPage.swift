@@ -336,6 +336,8 @@ public final class MenuPageTab: MenuTab {
 
     /// The tool's own pages, by name (`MenuTab.subpage`).
     public var pages: (String) -> TabbedMenuSubpage? = { _ in nil }
+    /// Which of `pages` holds the tool's settings, for the app's Settings.
+    public var settingsPage: String?
     public var onOpenPage: (String) -> Void = { _ in }
 
     public init(model: MenuPageModel, help: HelpContent) {

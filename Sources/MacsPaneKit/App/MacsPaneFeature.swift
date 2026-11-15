@@ -40,6 +40,8 @@ public final class MacsPaneFeature {
 
     /// The names of MacsPane's own pages of the dropdown, for pictures of them.
     public static let pages = [NewShortcutModel.page]
+    /// MacsPane's settings page, opened from mac++'s Settings.
+    static let settingsPage = "macspane-settings"
 
     public init() {
         if let url = try? MacsPanePaths.configURL() {
@@ -59,9 +61,14 @@ public final class MacsPaneFeature {
             page?.onClose()
             model?.revealConfigFile()
         })
-        tab.pages = { [weak model] name in
-            name == NewShortcutModel.page ? model?.newShortcutPage() : nil
+        tab.pages = { [weak model, weak tab] name in
+            switch name {
+            case NewShortcutModel.page: model?.newShortcutPage()
+            case Self.settingsPage: model?.settingsPage { tab?.onClose() }
+            default: nil
+            }
         }
+        tab.settingsPage = Self.settingsPage
         model.onOpenPage = { [weak tab] in tab?.onOpenPage($0) }
         self.tab = tab
         model.onEdit = { [weak self, weak model] draft in
@@ -112,7 +119,7 @@ enum MacsPaneHelp {
         logo: { AnyView(MacsPaneLogo(size: $0)) },
         topics: [
             .init("rectangle.split.2x1", "Drag to the notch",
-                  "Drag any window by its title bar to the top of the screen and hold it on the notch. Your layouts open; let go on a box and the window fills it. Hold for sets how long to wait."),
+                  "Drag any window by its title bar to the top of the screen and hold it on the notch. Your layouts open; let go on a box and the window fills it. Hold for, in Settings › MacsPane, sets how long to wait."),
             .init("square.grid.2x2", "Layouts",
                   "The layouts the notch offers have their switch on. Drag one by its picture into the order you want; its pencil changes it. Add saves the windows on screen as one or draws your own."),
             .init("square.stack.3d.up", "Presets",

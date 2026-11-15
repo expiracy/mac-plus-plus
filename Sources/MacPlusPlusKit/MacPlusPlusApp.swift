@@ -130,6 +130,9 @@ final class MacPlusPlusAppDelegate: NSObject, NSApplicationDelegate {
     private func makeSettings() -> AppSettings {
         AppSettings(
             tools: tabs.map(\.help),
+            toolLinks: tabs.compactMap { tab in
+                tab.settingsPage.map { AppSettings.ToolLink(name: tab.title, logo: tab.help.logo, page: $0) }
+            },
             actions: .init(
                 openPage: { [weak self] in self?.menu?.openPage($0) },
                 setOpenAtLogin: { [weak self] in self?.bored.setOpenAtLogin($0) },
@@ -200,7 +203,8 @@ final class MacPlusPlusAppDelegate: NSObject, NSApplicationDelegate {
         }
         if let directory = value(after: "--snapshot-menu") {
             TabbedMenuSnapshot.write(tabs: tabs, pages: { [weak self] in self?.settings.page($0) },
-                                     fromSettings: [TabbedMenuPage.help(for: nil)], toolPages: MacsPaneFeature.pages + MacsBoredFeature.pages,
+                                     fromSettings: [TabbedMenuPage.help(for: nil)] + tabs.compactMap(\.settingsPage),
+                                     toolPages: MacsPaneFeature.pages + MacsBoredFeature.pages,
                                      into: URL(fileURLWithPath: directory))
             NSApp.terminate(nil)
         }
