@@ -221,6 +221,17 @@ public enum ConfigSchema {
         "open": {
           "type": "string",
           "description": "Open a link, or a file or folder (~/ works)."
+        },
+        "typeText": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Type this text into the app in front."
+        },
+        "wait": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 3600,
+          "description": "Wait this many seconds before the next step."
         }
       },
       "additionalProperties": false,
@@ -324,8 +335,18 @@ public enum ConfigSchema {
     },
     "trigger": {
       "type": "object",
-      "required": [
-        "action"
+      "description": "An action: what starts it (any of keys, mouseButton, appOpens, typed and at; keys when none is given), then one action or several steps.",
+      "oneOf": [
+        {
+          "required": [
+            "action"
+          ]
+        },
+        {
+          "required": [
+            "steps"
+          ]
+        }
       ],
       "properties": {
         "name": {
@@ -360,8 +381,80 @@ public enum ConfigSchema {
           "type": "boolean",
           "default": true
         },
+        "mouseButton": {
+          "oneOf": [
+            {
+              "type": "integer",
+              "minimum": 3
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "integer",
+                "minimum": 3
+              }
+            }
+          ],
+          "description": "Starts when this mouse button, or any in a list, is clicked: 3 is the middle, 4 and 5 the side buttons."
+        },
+        "appOpens": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/app"
+            },
+            {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/app"
+              }
+            }
+          ],
+          "description": "Starts when this app, or any in a list, opens."
+        },
+        "typed": {
+          "oneOf": [
+            {
+              "type": "string",
+              "minLength": 2,
+              "pattern": "^\\S+$"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 2,
+                "pattern": "^\\S+$"
+              }
+            }
+          ],
+          "description": "Starts when these letters, or any in a list, are typed; they're taken out again."
+        },
+        "at": {
+          "oneOf": [
+            {
+              "type": "string",
+              "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$"
+              }
+            }
+          ],
+          "description": "Starts each day at this time, or each in a list, like \"09:00\"."
+        },
         "action": {
           "$ref": "#/$defs/action"
+        },
+        "steps": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/action"
+          },
+          "description": "Several actions, run in order."
         },
         "apps": {
           "type": "array",
@@ -380,6 +473,28 @@ public enum ConfigSchema {
           "keys": "ctrl+opt+N",
           "action": {
             "openApp": "com.apple.Notes"
+          }
+        },
+        {
+          "name": "Start work",
+          "keys": "hyper+W",
+          "steps": [
+            {
+              "openApp": "com.tinyspeck.slackmacgap"
+            },
+            {
+              "wait": 0.5
+            },
+            {
+              "openApp": "com.apple.mail"
+            }
+          ]
+        },
+        {
+          "name": "Meeting mode",
+          "appOpens": "us.zoom.xos",
+          "action": {
+            "runShortcut": "Meeting mode"
           }
         }
       ]

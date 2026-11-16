@@ -45,8 +45,8 @@ final class ConfigStoreTests: XCTestCase {
         config.triggers = [Trigger(name: "Notes", keys: [KeyCombo(text: "ctrl+opt+N")!],
                                    action: .openApp(AppRef(bundleID: "com.apple.Notes", name: "Notes")))]
         try store.save(config)
-        XCTAssertEqual(MacsBoredConfigStore(url: url).config.triggers.map(\.action),
-                       [.openApp(AppRef(bundleID: "com.apple.Notes", name: "com.apple.Notes"))])
+        XCTAssertEqual(MacsBoredConfigStore(url: url).config.triggers.map(\.steps),
+                       [[.openApp(AppRef(bundleID: "com.apple.Notes", name: "com.apple.Notes"))]])
     }
 
     func testAnEditOnDiskIsPickedUpAndKeepsEntriesIDs() throws {

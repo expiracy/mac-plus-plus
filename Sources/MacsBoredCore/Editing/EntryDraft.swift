@@ -1,34 +1,109 @@
 import Foundation
 
-/// What the editor holds while you set something up. Its four tabs are the four different things
-/// MacsBored does: remap keys, open something, run a Shortcut, and pass keys through (a whole app,
-/// or only some keys). Every tab shares the name, the keys, the apps and the conditions, so moving
-/// between tabs never loses them; `result` is what the current tab makes of it all.
+/// What the editor holds while you set up an action: what starts it (any of several triggers, each
+/// with one value or several: keys, mouse buttons, apps opening, letters typed, times), then what it
+/// does, step by step, then where and when it works. "An app is in front" is passthrough, and stands
+/// alone: it makes a passthrough app, which needs no steps (it sends the app its keys). Changing the
+/// triggers never loses the steps, the apps or the conditions; `result` is what it all makes now.
 public struct EntryDraft: Equatable, Sendable {
-    public enum Tab: String, CaseIterable, Sendable {
-        case remap, open, shortcut, passthrough
+    /// What sets it off, as the editor's Trigger menu offers it.
+    public enum When: String, CaseIterable, Sendable {
+        case keys, mouseButton, appOpens, appInFront, typed, time
 
         public var title: String {
             switch self {
-            case .remap: "Remap Keys"
-            case .open: "Open"
-            case .shortcut: "Run Shortcut"
-            case .passthrough: "Passthrough"
+            case .keys: "I press keys"
+            case .mouseButton: "I click a mouse button"
+            case .appOpens: "An app opens"
+            case .appInFront: "An app is in front"
+            case .typed: "I type some letters"
+            case .time: "It's a set time"
             }
         }
 
         public var symbol: String {
             switch self {
-            case .remap: "arrow.left.arrow.right"
-            case .open: "arrow.up.forward.square"
-            case .shortcut: "square.stack.3d.up"
-            case .passthrough: "arrow.right.to.line"
+            case .appInFront: "arrow.right.to.line"
+            case .keys: TriggerStart.Kind.keys.symbol
+            case .mouseButton: TriggerStart.Kind.mouseButton.symbol
+            case .appOpens: TriggerStart.Kind.appOpens.symbol
+            case .typed: TriggerStart.Kind.typed.symbol
+            case .time: TriggerStart.Kind.time.symbol
             }
         }
     }
 
-    public enum PassMode: Sendable { case wholeApp, someKeys }
-    public enum OpenTarget: Sendable { case app, link, file }
+    /// One step being set up: its kind, and whatever that kind needs (keys, an app, text or seconds).
+    public struct Step: Identifiable, Equatable, Sendable {
+        public let id: UUID
+        public var kind: TriggerAction.Kind
+        public var keys: KeyCombo?
+        public var app: AppRef?
+        /// The link or file, the Shortcut's name, or the text to type.
+        public var text = ""
+        public var seconds = 1.0
+
+        public init(_ kind: TriggerAction.Kind) {
+            id = UUID()
+            self.kind = kind
+        }
+
+        public init(_ action: TriggerAction) {
+            self.init(action.kind)
+            switch action {
+            case let .sendKeys(keys): self.keys = keys
+            case let .openApp(app): self.app = app
+            case let .open(target), let .runShortcut(target), let .typeText(target): text = target
+            case let .wait(seconds): self.seconds = seconds
+            case .passThrough: break
+            }
+        }
+
+        /// The step as the trigger runs it, or nil while it still needs something.
+        public var action: TriggerAction? {
+            let trimmed = text.trimmingCharacters(in: .whitespaces)
+            switch kind {
+            case .sendKeys: return keys.map { .sendKeys($0) }
+            case .openApp: return app.map { .openApp($0) }
+            case .open: return trimmed.isEmpty ? nil : .open(trimmed)
+            case .runShortcut: return trimmed.isEmpty ? nil : .runShortcut(text)
+            case .typeText: return text.isEmpty ? nil : .typeText(text)
+            case .wait: return .wait(min(max(seconds, 0.1), TriggerAction.longestWait))
+            case .passThrough: return .passThrough
+            }
+        }
+
+        /// What the step still needs, as the bar says it.
+        public var missing: String? {
+            guard action == nil else { return nil }
+            switch kind {
+            case .sendKeys: return "Record the keys to press"
+            case .openApp: return "Choose the app to open"
+            case .open: return "Enter a link or file"
+            case .runShortcut: return "Choose a Shortcut"
+            case .typeText: return "Type the text to type"
+            case .wait, .passThrough: return nil
+            }
+        }
+
+        /// "Open Notes", "Press ⌘←": the step in a few words, for the name.
+        public var phrase: String {
+            switch kind {
+            case .sendKeys: return keys.map { "Press \($0.displayName)" } ?? "Press keys"
+            case .openApp: return app.map { "Open \($0.name)" } ?? "Open an app"
+            case .open:
+                let target = text.trimmingCharacters(in: .whitespaces)
+                if target.isEmpty { return "Open a link or file" }
+                if target.contains("://") { return "Open " + (URL(string: target)?.host ?? target) }
+                let last = (target as NSString).lastPathComponent
+                return "Open " + (last.isEmpty ? target : last)
+            case .runShortcut: return text.isEmpty ? "Run a Shortcut" : text
+            case .typeText: return text.isEmpty ? "Type text" : "Type “\(text.prefix(24))”"
+            case .wait: return "Wait \(seconds.formatted()) s"
+            case .passThrough: return "Pass keys to the app"
+            }
+        }
+    }
 
     /// What the draft was opened on, so saving replaces it.
     public enum Origin: Equatable, Sendable {
@@ -43,19 +118,20 @@ public struct EntryDraft: Equatable, Sendable {
     }
 
     public var origin: Origin = .new
-    public var tab: Tab = .remap
-    public var passMode: PassMode = .wholeApp
-    public var openTarget: OpenTarget = .app
+    /// The kinds of trigger chosen, in the order they were; any of them starts the action.
+    public private(set) var whens: [When] = []
     /// Your own name; empty follows `suggestedName`.
     public var customName = ""
     public var isEnabled = true
-    /// The keys that set a trigger off: one, or several (say, each shortcut a session should get).
+    /// The keys that set it off: one, or several (say, each shortcut a session should get).
     public var keys: [KeyCombo] = []
-    public var sendKeys: KeyCombo?
-    public var app: AppRef?
-    public var link = ""
-    public var file = ""
-    public var shortcutName = ""
+    public var mouseButtons: [Int] = []
+    public var openingApps: [AppRef] = []
+    /// Letters to type, several separated by spaces or commas (";sig ;s").
+    public var letters = ""
+    /// Minutes since midnight.
+    public var times: [Int] = []
+    public var steps: [Step] = []
     /// A trigger works only in `apps` (a passthrough app always does).
     public var onlyInApps = false
     public var apps: [AppRef] = []
@@ -65,35 +141,45 @@ public struct EntryDraft: Equatable, Sendable {
     public var modifierLayout = ModifierLayout.asIs
     private var triggerExtra = JSONFields()
     private var profileExtra = JSONFields()
-    /// The ID a new entry gets, fixed for the draft so previews and the save agree.
+    /// The ID a new entry gets, fixed for the draft so the save replaces nothing else.
     private var newID = UUID()
 
     public init() {}
+
+    /// A new action starting with these triggers and steps (one of the ready-made starts).
+    public init(whens: [When], steps: [TriggerAction.Kind] = []) {
+        whens.forEach { add($0) }
+        self.steps = steps.map(Step.init)
+    }
 
     public init(trigger: Trigger) {
         origin = .trigger(trigger.id)
         isEnabled = trigger.isEnabled
         keys = trigger.keys
+        var typed: [String] = []
+        for start in trigger.starts {
+            let kind: When
+            switch start {
+            case .keys: kind = .keys
+            case let .mouseButton(number): kind = .mouseButton; mouseButtons.append(number)
+            case let .appOpens(app): kind = .appOpens; openingApps.append(app)
+            case let .typed(text): kind = .typed; typed.append(text)
+            case let .time(minutes): kind = .time; times.append(minutes)
+            }
+            if !whens.contains(kind) { whens.append(kind) }
+        }
+        letters = typed.joined(separator: " ")
+        steps = trigger.steps.map(Step.init)
         apps = trigger.apps
         onlyInApps = !trigger.apps.isEmpty
         conditions = trigger.conditions
         triggerExtra = trigger.extra
-        switch trigger.action {
-        case let .sendKeys(send): tab = .remap; sendKeys = send
-        case let .openApp(app): tab = .open; openTarget = .app; self.app = app
-        case let .open(target):
-            tab = .open
-            if target.contains("://") { openTarget = .link; link = target } else { openTarget = .file; file = target }
-        case let .runShortcut(name): tab = .shortcut; shortcutName = name
-        case .passThrough: tab = .passthrough; passMode = .someKeys
-        }
         if trigger.name != suggestedName { customName = trigger.name }
     }
 
     public init(profile: PassthroughProfile) {
         origin = .profile(profile.id)
-        tab = .passthrough
-        passMode = .wholeApp
+        whens = [.appInFront]
         isEnabled = profile.isEnabled
         apps = profile.apps
         onlyInApps = true
@@ -105,8 +191,30 @@ public struct EntryDraft: Equatable, Sendable {
         if profile.name != suggestedName { customName = profile.name }
     }
 
+    /// The first trigger chosen, or nil before any is.
+    public var when: When? { whens.first }
+
     /// A whole app passes through: the draft is a passthrough entry rather than a trigger.
-    public var isPassthroughApp: Bool { tab == .passthrough && passMode == .wholeApp }
+    public var isPassthroughApp: Bool { whens == [.appInFront] }
+
+    /// Adds a kind of trigger, with a first value where it needs one (the back button, 9:00). "An
+    /// app is in front" stands alone, so adding it takes the others away, and adding another takes it.
+    public mutating func add(_ when: When) {
+        guard !whens.contains(when) else { return }
+        if when == .appInFront { whens = [] } else { whens.removeAll { $0 == .appInFront } }
+        whens.append(when)
+        if when == .mouseButton && mouseButtons.isEmpty { mouseButtons = [4] }
+        if when == .time && times.isEmpty { times = [9 * 60] }
+    }
+
+    public mutating func remove(_ when: When) {
+        whens.removeAll { $0 == when }
+    }
+
+    /// Adds the kind when it's not there, takes it away when it is.
+    public mutating func toggle(_ when: When) {
+        if whens.contains(when) { remove(when) } else { add(when) }
+    }
 
     public var name: String {
         let own = customName.trimmingCharacters(in: .whitespaces)
@@ -115,60 +223,74 @@ public struct EntryDraft: Equatable, Sendable {
 
     /// A name that says what it does, used until you give your own.
     public var suggestedName: String {
-        switch tab {
-        case .remap: return sendKeys.map { "Press \($0.displayName)" } ?? "Remap keys"
-        case .shortcut: return shortcutName.isEmpty ? "Run a Shortcut" : shortcutName
-        case .passthrough:
-            if passMode == .wholeApp { return apps.first?.name ?? "Passthrough app" }
+        if isPassthroughApp { return apps.first?.name ?? "Passthrough app" }
+        if steps.map(\.kind) == [.passThrough] {
             switch keys.count {
             case 0: return "Pass keys to the app"
             case 1: return "Pass \(keys[0].displayName) to the app"
             case 2: return "Pass \(keys[0].displayName) and \(keys[1].displayName) to the app"
             default: return "Pass \(keys.count) shortcuts to the app"
             }
-        case .open:
-            switch openTarget {
-            case .app: return app.map { "Open \($0.name)" } ?? "Open an app"
-            case .link:
-                let host = URL(string: link.trimmingCharacters(in: .whitespaces))?.host
-                return link.isEmpty ? "Open a link" : "Open \(host ?? link)"
-            case .file:
-                let last = (file as NSString).lastPathComponent
-                return file.isEmpty ? "Open a file" : "Open \(last.isEmpty ? file : last)"
-            }
+        }
+        let opened = steps.compactMap { $0.kind == .openApp ? $0.app?.name : nil }
+        if steps.count > 1, opened.count == steps.count {
+            return "Open " + ListFormatter.localizedString(byJoining: opened)
+        }
+        switch steps.count {
+        case 0: return "New action"
+        case 1: return steps[0].phrase
+        default: return "\(steps[0].phrase), then \(steps.count - 1) more"
         }
     }
 
     /// Why it can't be saved yet, as the Save button's neighbour says it; nil when it can.
     public var missing: String? {
+        guard !whens.isEmpty else { return "Choose a trigger to start" }
         if isPassthroughApp { return apps.isEmpty ? "Add an app to save" : nil }
-        guard !keys.isEmpty else { return "Record the keys to save" }
-        switch tab {
-        case .remap: return sendKeys == nil ? "Choose the keys to press" : nil
-        case .shortcut: return shortcutName.trimmingCharacters(in: .whitespaces).isEmpty ? "Choose a Shortcut" : nil
-        case .passthrough: return nil
-        case .open:
-            switch openTarget {
-            case .app: return app == nil ? "Choose an app" : nil
-            case .link: return link.trimmingCharacters(in: .whitespaces).isEmpty ? "Enter a link" : nil
-            case .file: return file.trimmingCharacters(in: .whitespaces).isEmpty ? "Choose a file or folder" : nil
+        for when in whens {
+            switch when {
+            case .keys: if keys.isEmpty { return "Record the keys to save" }
+            case .mouseButton: if mouseButtons.isEmpty { return "Choose a mouse button" }
+            case .appOpens: if openingApps.isEmpty { return "Choose the app" }
+            case .typed: if typedLetters == nil { return "Type at least two letters, no spaces" }
+            case .time: if times.isEmpty { return "Choose a time" }
+            case .appInFront: break
             }
         }
+        guard !steps.isEmpty else { return "Add a step to save" }
+        if steps.contains(where: { $0.kind == .passThrough }) {
+            if whens != [.keys] { return "Only keys can be sent to the app" }
+            if steps.count > 1 { return "Sending keys to the app is a step on its own" }
+        }
+        for (index, step) in steps.enumerated() {
+            if let missing = step.missing {
+                guard steps.count > 1 else { return missing }
+                return "Step \(index + 1): " + missing.prefix(1).lowercased() + missing.dropFirst()
+            }
+        }
+        return nil
     }
 
-    /// The trigger's action, or nil while the tab still needs something.
-    private var action: TriggerAction? {
-        switch tab {
-        case .remap: return sendKeys.map { .sendKeys($0) }
-        case .shortcut: return shortcutName.isEmpty ? nil : .runShortcut(shortcutName)
-        case .passthrough: return passMode == .someKeys ? .passThrough : nil
-        case .open:
-            switch openTarget {
-            case .app: return app.map { .openApp($0) }
-            case .link: return link.isEmpty ? nil : .open(link)
-            case .file: return file.isEmpty ? nil : .open(file)
+    /// The letters typed, each at least two long; nil when there are none, or one is too short.
+    private var typedLetters: [String]? {
+        let parts = letters.split(whereSeparator: { $0.isWhitespace || $0 == "," }).map(String.init)
+        return parts.isEmpty || parts.contains { $0.count < 2 } ? nil : parts
+    }
+
+    /// Every trigger, as the action keeps them; nil while one still needs something.
+    private var starts: [TriggerStart]? {
+        var starts: [TriggerStart] = []
+        for when in whens {
+            switch when {
+            case .keys: starts.append(.keys)
+            case .mouseButton: starts += mouseButtons.map { .mouseButton($0) }
+            case .appOpens: starts += openingApps.map { .appOpens($0) }
+            case .typed: guard let typed = typedLetters else { return nil }; starts += typed.map { .typed($0) }
+            case .time: starts += times.map { .time($0) }
+            case .appInFront: return nil
             }
         }
+        return starts.isEmpty ? nil : starts
     }
 
     private var triggerID: UUID {
@@ -181,11 +303,13 @@ public struct EntryDraft: Equatable, Sendable {
         return newID
     }
 
-
     public var trigger: Trigger? {
-        guard !isPassthroughApp, let action else { return nil }
-        return Trigger(id: triggerID, name: name, isEnabled: isEnabled, keys: keys, action: action,
-                       apps: onlyInApps ? apps : [], conditions: conditions, extra: triggerExtra)
+        guard let starts, !steps.isEmpty else { return nil }
+        let actions = steps.compactMap(\.action)
+        guard actions.count == steps.count else { return nil }
+        return Trigger(id: triggerID, name: name, isEnabled: isEnabled, keys: whens.contains(.keys) ? keys : [],
+                       steps: actions, apps: onlyInApps ? apps : [], conditions: conditions, starts: starts,
+                       extra: triggerExtra)
     }
 
     public var profile: PassthroughProfile? {
@@ -195,32 +319,50 @@ public struct EntryDraft: Equatable, Sendable {
                                   modifierLayout: modifierLayout, extra: profileExtra)
     }
 
+    /// The action in a sentence, as far as it's set up: "When I press Hyper W or click button 4,
+    /// open Notes, then open Safari." Nil before any trigger is chosen.
+    public var sentence: String? {
+        guard !whens.isEmpty else { return nil }
+        if isPassthroughApp {
+            let names = apps.map(\.name)
+            return names.isEmpty ? "While an app you choose is in front, it gets your Mac's shortcuts."
+                : "While \(Self.joined(names, "or")) is in front, it gets your Mac's shortcuts."
+        }
+        let when = Self.joined(whens.map(triggerPhrase), "or")
+        let does: String
+        switch steps.count {
+        case 0: does = "…"
+        case 1: does = Self.lower(steps[0].phrase)
+        default: does = steps.dropLast().map { Self.lower($0.phrase) }.joined(separator: ", ")
+            + ", then " + Self.lower(steps[steps.count - 1].phrase)
+        }
+        return "When \(when), \(does)" + (does.hasSuffix("…") ? "" : ".")
+    }
+
+    private func triggerPhrase(_ when: When) -> String {
+        switch when {
+        case .keys: return "I press " + (keys.isEmpty ? "keys" : Self.joined(keys.map(\.displayName), "or"))
+        case .mouseButton:
+            let names = mouseButtons.map { $0 == 3 ? "the middle button" : "button \($0)" }
+            return "I click " + (names.isEmpty ? "a mouse button" : Self.joined(names, "or"))
+        case .appOpens: return (openingApps.isEmpty ? "an app" : Self.joined(openingApps.map(\.name), "or")) + " opens"
+        case .typed: return "I type " + (typedLetters.map { Self.joined($0, "or") } ?? "some letters")
+        case .time: return "it's " + (times.isEmpty ? "a set time" : Self.joined(times.map(ConfigFile.clock), "or"))
+        case .appInFront: return "an app is in front"
+        }
+    }
+
+    private static func lower(_ text: String) -> String { text.prefix(1).lowercased() + text.dropFirst() }
+
+    /// "a, b or c".
+    private static func joined(_ words: [String], _ last: String) -> String {
+        guard words.count > 1 else { return words.first ?? "" }
+        return words.dropLast().joined(separator: ", ") + " \(last) " + words[words.count - 1]
+    }
+
     public var result: Result? {
         guard missing == nil else { return nil }
         if let profile { return .profile(profile) }
         return trigger.map { .trigger($0) }
-    }
-
-    /// This entry as `config.json` writes it, with null for whatever it still needs.
-    public var preview: String {
-        if isPassthroughApp {
-            let shown = profile ?? PassthroughProfile(name: name, isEnabled: isEnabled, apps: [], conditions: conditions,
-                                                      systemShortcuts: systemShortcuts, captureAllKeys: captureAllKeys,
-                                                      modifierLayout: modifierLayout, extra: profileExtra)
-            return Writer.profile(shown).written()
-        }
-        if let trigger { return Writer.trigger(trigger).written() }
-        let placeholder = Trigger(name: name, isEnabled: isEnabled, keys: keys, action: .passThrough,
-                                  apps: onlyInApps ? apps : [], conditions: conditions, extra: triggerExtra)
-        guard case var .object(members) = Writer.trigger(placeholder),
-              let index = members.firstIndex(where: { $0.0 == "action" }) else { return "" }
-        let kind: TriggerAction.Kind = switch tab {
-        case .remap: .sendKeys
-        case .shortcut: .runShortcut
-        case .passthrough: .passThrough
-        case .open: openTarget == .app ? .openApp : .open
-        }
-        members[index].1 = .object([(kind.rawValue, .null)])
-        return JSONValue.object(members).written()
     }
 }

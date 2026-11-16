@@ -4,40 +4,39 @@ import AppKit
 import SwiftUI
 import MacsBoredCore
 
-/// MacsBored's page of mac++'s dropdown, drawn by the same view as MacsPane's. MacsBored does two
-/// things: beside its name, the switch for all of it; under its name, what each is doing; then its
-/// a section for each thing it makes (passthrough, key remaps, quick opens, Shortcuts to run), each
-/// row with a pencil, a bin and its switch, and a + on each title to make a new one. Accessibility and Open at login
-/// belong to the whole app (the dropdown's banner and Settings).
+/// MacsBored's page of mac++'s dropdown, Actions, drawn by the same view as MacsPane's: beside its
+/// name, the switch for all of it; under its name, what it is doing; then one list of your actions,
+/// each row with what it's called, what starts it, a pencil, a bin and its switch, and + Add on the
+/// list's title for a new one. Passthrough apps are actions too ("An app is in front"). Accessibility
+/// and Open at login belong to the whole app (the dropdown's banner and Settings).
 @MainActor
 enum MacsBoredMenu {
     static let brand = MenuPageBrand(name: "MacsBored", logo: { AnyView(MacsBoredLogo(size: $0)) },
-                                     symbol: "keyboard", feature: "Keyboard")
+                                     symbol: "bolt", feature: "Actions")
 
     static func content(_ model: MacsBoredModel) -> MenuPageContent {
         var content = MenuPageContent()
-        // The main switch, beside the name: all of MacsBored.
-        content.primary = .toggle("MacsBored", symbol: "command", isOn: model.config.isEnabled, primary: true) {
+        // The main switch, beside the name: all of it.
+        content.primary = .toggle("Actions", symbol: "bolt", isOn: model.config.isEnabled, primary: true) {
             [weak model] in
             guard let model else { return }
             model.setEnabled(!model.config.isEnabled)
         }
         content.liveFact = statusLine(model)
         content.warnings = warnings(model)
-        content.groups = groups(model)
+        content.groups = [actions(model)]
         return content
     }
 
-    /// Both halves at a glance: what passthrough is doing, then how many triggers are on.
+    /// How many actions are on, after what passthrough is doing when it's doing something.
     private static func statusLine(_ model: MacsBoredModel) -> String {
-        let app = model.context.appName ?? "the app"
-        let passthrough: String
         if !model.config.isEnabled { return "Off · macOS keeps all its keys" }
-        if model.plan.isActive { passthrough = "Passing shortcuts to \(app)" }
-        else if model.isPaused { passthrough = "Passthrough paused in \(app)" }
-        else { passthrough = "Passthrough on" }
-        let on = model.config.triggers.filter(\.isEnabled).count
-        return passthrough + " · " + (on == 0 ? "no triggers on" : on == 1 ? "1 trigger on" : "\(on) triggers on")
+        let on = model.config.triggers.filter(\.isEnabled).count + model.config.profiles.filter(\.isEnabled).count
+        let count = on == 0 ? "No actions on" : on == 1 ? "1 action on" : "\(on) actions on"
+        let app = model.context.appName ?? "the app"
+        if model.plan.isActive { return "Sending keys to \(app) · " + count.lowercased() }
+        if model.isPaused { return "Paused in \(app) · " + count.lowercased() }
+        return count
     }
 
     // MARK: - Warnings
@@ -63,61 +62,104 @@ enum MacsBoredMenu {
         return warnings
     }
 
-    // MARK: - Lists
+    // MARK: - The list
 
-    /// A section for each thing MacsBored makes, each with its own +: passthrough (whole apps,
-    /// and triggers that pass only some keys), key remaps, quick opens, and Shortcuts to run.
-    private static func groups(_ model: MacsBoredModel) -> [MenuGroup] {
-        let triggers = model.config.triggers
-        func rows(_ kinds: Set<TriggerAction.Kind>) -> [MenuEntry] {
-            triggers.filter { kinds.contains($0.action.kind) }.map { triggerRow($0, model) }
-        }
-        return [
-            group("Passthrough", rows: model.config.profiles.map { profileRow($0, model) } + rows([.passThrough]),
-                  new: "New passthrough app", tab: .passthrough, model),
-            group("Key remaps", rows: rows([.sendKeys]), new: "New key remap", tab: .remap, model),
-            group("Quick opens", rows: rows([.openApp, .open]), new: "New quick open", tab: .open, model),
-            group("Shortcuts to run", rows: rows([.runShortcut]), new: "New Shortcut to run", tab: .shortcut, model),
+    /// Every action, then every passthrough app, with + Add on the title: a bubble of ready-made
+    /// starts, each opening the editor with its trigger and first step chosen, or a blank one.
+    private static func actions(_ model: MacsBoredModel) -> MenuGroup {
+        let rows = model.config.triggers.map { triggerRow($0, model) } + model.config.profiles.map { profileRow($0, model) }
+        let starts: [(String, String, String, EntryDraft)] = [
+            ("Remap a key", "arrow.left.arrow.right", "remap", EntryDraft(whens: [.keys], steps: [.sendKeys])),
+            ("Open an app with keys", "square.grid.2x2", "open-app", EntryDraft(whens: [.keys], steps: [.openApp])),
+            ("Expand a few letters", "character.cursor.ibeam", "letters", EntryDraft(whens: [.typed], steps: [.typeText])),
+            ("Give a mouse button a job", "computermouse", "mouse", EntryDraft(whens: [.mouseButton], steps: [.sendKeys])),
+            ("When an app opens…", "macwindow", "app-opens", EntryDraft(whens: [.appOpens])),
+            ("Send shortcuts to an app", "arrow.right.to.line", "passthrough", EntryDraft(whens: [.appInFront])),
+            ("Start from scratch…", "plus", "blank", EntryDraft()),
         ]
-    }
-
-    private static func group(_ title: String, rows: [MenuEntry], new: String, tab: EntryDraft.Tab,
-                              _ model: MacsBoredModel) -> MenuGroup {
-        // Opens the editor page in the dropdown.
-        let add = MenuEntry.command(new, symbol: "plus", key: "new-\(tab.rawValue)", keepsOpen: true) { [weak model] in
-            model?.newEntry(tab)
-        }
-        return MenuGroup(title: title, rows: rows, add: add, empty: "None yet.")
+        // Each opens the editor page in the dropdown.
+        let add = MenuEntry.submenu("New action", symbol: "plus", key: "new-action", items: starts.map { title, symbol, key, draft in
+            .command(title, symbol: symbol, key: "new-action-\(key)", keepsOpen: true) { [weak model] in model?.newEntry(draft) }
+        })
+        return MenuGroup(title: "Actions", rows: rows, add: add, empty: "None yet. Add one: when something happens, do a few things.",
+                         visibleRows: 6.5)
     }
 
     private static func profileRow(_ profile: PassthroughProfile, _ model: MacsBoredModel) -> MenuEntry {
-        var row = MenuEntry.toggle(profile.name, symbol: "macwindow", isOn: profile.isEnabled,
+        var row = MenuEntry.toggle(profile.name, symbol: EntryDraft.When.appInFront.symbol, isOn: profile.isEnabled,
                                    key: "profile-\(profile.id)",
                                    secondary: ("pencil", "Edit", { [weak model] in model?.editProfile(profile.id) }),
                                    trash: ("Delete \(profile.name)", { [weak model] in model?.deleteProfile(profile.id) })) {
             [weak model] in model?.toggleProfile(profile.id)
         }
-        if let icon = profile.apps.first.flatMap({ AppIcons.icon(bundleID: $0.bundleID) }) { row.leading = .appIcon(icon) }
+        // No picture: what starts an action can be several things.
+        row.leading = .none
+        row.trailing = "In front"
+        row.peek = [.init("When", profile.apps.map { "\(AppIcons.name($0)) is in front" }),
+                    .init("Do", ["Send it your Mac's shortcuts"])]
         row.keepsOpen = true   // the pencil opens the editor page
         return row
     }
 
     private static func triggerRow(_ trigger: Trigger, _ model: MacsBoredModel) -> MenuEntry {
-        var row = MenuEntry.toggle(trigger.name, symbol: trigger.action.kind.symbol, isOn: trigger.isEnabled,
+        var row = MenuEntry.toggle(trigger.name, symbol: trigger.starts.first?.kind.symbol ?? TriggerStart.Kind.keys.symbol, isOn: trigger.isEnabled,
                                    key: "trigger-\(trigger.id)",
                                    secondary: ("pencil", "Edit", { [weak model] in model?.editTrigger(trigger.id) }),
                                    trash: ("Delete \(trigger.name)", { [weak model] in model?.deleteTrigger(trigger.id) })) {
             [weak model] in model?.toggleTrigger(trigger.id)
         }
-        // A quick open shows the app it opens.
-        if case let .openApp(app) = trigger.action, let icon = AppIcons.icon(bundleID: app.bundleID) {
-            row.leading = .appIcon(icon)
-        }
-        row.trailing = trigger.keys.isEmpty ? "No keys"
-            : trigger.keys.count == 1 ? trigger.keys[0].displayName
-            : "\(trigger.keys[0].displayName) +\(trigger.keys.count - 1)"
+        // No picture: what starts an action can be several things. Its label, and the bubble from
+        // it, say what they are.
+        row.leading = .none
+        row.trailing = startLabel(trigger)
+        row.trailingLabel = "Starts with"
+        row.peek = [.init("When", startLabels(trigger)), .init("Do", trigger.steps.map(stepLabel), numbered: trigger.steps.count > 1)]
         row.keepsOpen = true   // the pencil opens the editor page
         return row
+    }
+
+    /// What sets it off, in a word or two: "⌃⌥N", "Button 4", "Zoom opens", ";sig", "9:00", and how
+    /// many more triggers it has ("Hyper W +2").
+    static func startLabel(_ trigger: Trigger) -> String {
+        let labels = startLabels(trigger)
+        guard let first = labels.first else { return "No trigger" }
+        return labels.count == 1 ? first : "\(first) +\(labels.count - 1)"
+    }
+
+    /// Each thing that starts it, in a word or two.
+    static func startLabels(_ trigger: Trigger) -> [String] {
+        var labels: [String] = []
+        for start in trigger.starts {
+            switch start {
+            case .keys: labels += trigger.keys.isEmpty ? ["No keys"] : trigger.keys.map(\.displayName)
+            case let .mouseButton(number): labels.append(TriggerStart.buttonName(number))
+            case let .appOpens(app): labels.append("\(AppIcons.name(app)) opens")
+            case let .typed(letters): labels.append(letters)
+            case let .time(minutes): labels.append(clock(minutes))
+            }
+        }
+        return labels
+    }
+
+    /// A step in a few words: "Open Notes", "Press ⌘[", "Wait 0.5 s".
+    static func stepLabel(_ step: TriggerAction) -> String {
+        switch step {
+        case let .sendKeys(keys): "Press \(keys.displayName)"
+        case let .openApp(app): "Open \(AppIcons.name(app))"
+        case let .open(target):
+            target.contains("://") ? "Open " + (URL(string: target)?.host ?? target)
+                : "Open " + ((target as NSString).lastPathComponent.isEmpty ? target : (target as NSString).lastPathComponent)
+        case let .runShortcut(name): "Run “\(name)”"
+        case let .typeText(text): "Type “\(text.count > 20 ? text.prefix(20) + "…" : text)”"
+        case let .wait(seconds): "Wait \(seconds.formatted()) s"
+        case .passThrough: "Send the keys to the app"
+        }
+    }
+
+    /// The time as the Mac's clock writes it.
+    static func clock(_ minutes: Int) -> String {
+        let date = Calendar.current.date(bySettingHour: minutes / 60, minute: minutes % 60, second: 0, of: Date()) ?? Date()
+        return date.formatted(date: .omitted, time: .shortened)
     }
 }
 

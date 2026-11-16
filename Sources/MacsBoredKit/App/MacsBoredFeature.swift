@@ -5,8 +5,9 @@ import SwiftUI
 import MacsBoredCore
 import MacsShared
 
-/// MacsBored, mac++'s keyboard half: hands macOS's own shortcuts to the apps that should have them
-/// (Windows App, Citrix Viewer, a VM) and runs your own triggers everywhere else. The app that hosts
+/// MacsBored, mac++'s Actions: when something happens (keys pressed, a mouse button, an app opening,
+/// a few letters typed, a time of day), it does a few things in order; and it hands macOS's own
+/// shortcuts to the apps that should have them (Windows App, Citrix Viewer, a VM). The app that hosts
 /// it (mac++) owns the menu-bar icon, the dropdown, onboarding, Settings and Help; this is
 /// the rest: the config file, the model, the editor (a page of the dropdown), and MacsBored's page,
 /// lessons and Help. `stop()`
@@ -97,22 +98,12 @@ public final class MacsBoredFeature {
         model.stop()
     }
 
-    /// Open the editor on a new entry on `tab` (remap, open, shortcut or passthrough; `--open-editor`).
-    public func openEditor(_ tab: String) {
-        model.newEntry(EntryDraft.Tab(rawValue: tab) ?? .remap)
+    /// Open the editor on a new action, its trigger chosen when `when` names one (`--open-editor`).
+    public func openEditor(_ when: String?) {
+        model.newEntry(when.flatMap(EntryDraft.When.init(rawValue:)).map { EntryDraft(whens: [$0]) } ?? EntryDraft())
     }
 
-    /// The editor page's title for a new entry of this kind: "New Key Remap".
-    private static func newTitle(_ tab: EntryDraft.Tab) -> String {
-        switch tab {
-        case .remap: "New Key Remap"
-        case .open: "New Quick Open"
-        case .shortcut: "New Shortcut to Run"
-        case .passthrough: "New Passthrough"
-        }
-    }
-
-    /// The editor, on the entry asked for (a new remap with none), as a page of the dropdown. While one
+    /// The editor, on the entry asked for (a new action with none), as a page of the dropdown. While one
     /// of its fields records keys, every key goes to it, esc included.
     private func editorPage() -> TabbedMenuSubpage {
         let draft = editing ?? EntryDraft()
@@ -120,7 +111,7 @@ public final class MacsBoredFeature {
         let model = model
         let state = EntryEditorState(draft: draft)
         return TabbedMenuSubpage(
-            title: state.isNew ? Self.newTitle(draft.tab) : draft.name,
+            title: state.isNew ? "New Action" : draft.name,
             content: AnyView(EntryEditor(state: state, model: model)),
             // The bar's line of what is missing comes and goes.
             changes: state.objectWillChange.map { _ in () }.eraseToAnyPublisher(),
@@ -136,17 +127,17 @@ public final class MacsBoredFeature {
 enum MacsBoredHelp {
     static func content(revealConfigFile: @escaping () -> Void) -> HelpContent { HelpContent(
         name: "MacsBored",
-        tagline: "Your Mac's shortcuts, sent to the computer you're remoting into, and keys of your own everywhere else.",
+        tagline: "When something happens, do a few things: your own keys, clicks and routines, and your Mac's shortcuts sent to a remote computer.",
         logo: { AnyView(MacsBoredLogo(size: $0)) },
-        title: "Keyboard",
-        mark: HelpContent.symbolMark("keyboard"),
+        title: "Actions",
+        mark: HelpContent.symbolMark("bolt"),
         topics: [
-            .init("arrow.right.to.line", "Passthrough",
-                  "While a passthrough app (Windows App, Citrix Viewer, a virtual machine) is in front, ⌘⇥, Spotlight, ⌃←/→, the screenshot keys and the rest go to it, not your Mac. Switch to any other app and macOS has them back."),
+            .init("bolt", "Actions",
+                  "An action is a trigger and what it does. When you press keys, click a mouse button, open an app, type a few letters, or at a time of day, it runs its steps in order: press other keys, type text, open an app, a link or a file, run a Shortcut, or wait. + Add on the list makes one."),
+            .init("arrow.right.to.line", "Sending keys to an app",
+                  "Choose “An app is in front” as the trigger and pick Windows App, Citrix Viewer or a virtual machine: while it's in front, ⌘⇥, Spotlight, ⌃←/→, the screenshot keys and the rest go to it, not your Mac. Switch to any other app and macOS has them back."),
             .init("pause.circle", "Pausing",
-                  "\(MacsBoredConfig.defaultPauseKeys.displayName) gives macOS its shortcuts back in the passthrough app in front until you switch apps."),
-            .init("keyboard", "Triggers",
-                  "A trigger gives a key a job everywhere: remap keys, open an app, a link or a file, or run a Shortcut. Each kind has its own section; Add on its title makes one."),
+                  "\(MacsBoredConfig.defaultPauseKeys.displayName) gives macOS its shortcuts back in the app in front until you switch apps."),
             .init("doc.text", "The settings file",
                   "Everything is in one JSON file that MacsBored reloads the moment it changes, so you, a script or an AI agent can edit it. Show the settings file, below, finds it in Finder."),
         ],

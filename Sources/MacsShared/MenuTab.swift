@@ -6,8 +6,11 @@ import SwiftUI
 /// bubble, the switcher along its top and the app's footer; the page draws everything between, from
 /// its own name and main switch down. `MenuPageTab` is the one every tool uses.
 public protocol MenuTab: AnyObject {
-    /// The page's name in the switcher.
+    /// The tool's name ("MacsBored"): what its Help and the remembered page go by.
     var title: String { get }
+    /// What the page is called where people read it ("Actions"): the switcher's tooltip and the
+    /// back button of a page opened over it.
+    var shownTitle: String { get }
     /// The page's symbol in the switcher, drawn in one colour (the switcher sets its size and tint).
     func icon() -> AnyView
     /// Everything under the switcher, drawn without a bubble of its own.
@@ -36,5 +39,6 @@ public protocol MenuTab: AnyObject {
 
 extension MenuTab {
     public var settingsPage: String? { nil }
+    public var shownTitle: String { title }
 }
 #endif

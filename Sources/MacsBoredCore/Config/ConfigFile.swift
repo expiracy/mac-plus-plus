@@ -68,6 +68,9 @@ public enum ConfigFile {
 
     static let actionNames: [TriggerAction.Kind] = TriggerAction.Kind.allCases
 
+    /// The fields that say what sets a trigger off; a trigger has one.
+    static let startNames = ["keys", "mouseButton", "appOpens", "typed", "at"]
+
     static let conditionNames: [(String, Condition.Kind)] = [
         ("fullScreen", .fullScreen), ("fillsScreen", .fillsScreen), ("windowTitleContains", .windowTitleContains("")),
         ("externalDisplay", .externalDisplay), ("onBattery", .onBattery), ("timeBetween", .timeBetween(start: 0, end: 0)),
@@ -249,21 +252,85 @@ private struct Reader {
                 combos = [one]
             }
         }
-        guard let action = action(node) else { return nil }
+        guard let starts = starts(node), let steps = steps(node) else { return nil }
         return Trigger(name: string(node, "name") ?? "Trigger",
                        isEnabled: bool(node, "enabled", default: true),
                        keys: combos,
-                       action: action,
+                       steps: steps,
                        apps: apps(node),
                        conditions: conditions(node),
-                       extra: extras(node, known: ["name", "enabled", "keys", "action", "apps", "when"],
+                       starts: starts,
+                       extra: extras(node, known: Set(["name", "enabled", "action", "steps", "apps", "when"] + ConfigFile.startNames),
                                      what: "a trigger field"))
     }
 
-    mutating func action(_ trigger: JSONNode) -> TriggerAction? {
-        let example = "A trigger needs an action, like { \"openApp\": \"com.apple.Notes\" }."
-        guard let node = trigger["action"], let members = node.object, !members.isEmpty else {
-            error(trigger["action"] ?? trigger, example)
+    /// What sets the trigger off, any of: its keys (what a trigger with none of these has), mouse
+    /// buttons, apps opening, letters typed, times. Each but keys takes one value or a list.
+    mutating func starts(_ node: JSONNode) -> [TriggerStart]? {
+        var starts: [TriggerStart] = []
+        var failed = false
+        for name in ConfigFile.startNames {
+            guard let field = node[name], !field.isNull else { continue }
+            if name == "keys" { starts.append(.keys); continue }
+            for item in field.array ?? [field] {
+                if let start = start(name, item) { starts.append(start) } else { failed = true }
+            }
+        }
+        if failed { return nil }
+        return starts.isEmpty ? [.keys] : starts
+    }
+
+    private mutating func start(_ name: String, _ field: JSONNode) -> TriggerStart? {
+        switch name {
+        case "mouseButton":
+            guard case let .number(number) = field.kind, number == number.rounded(), (3...32).contains(number) else {
+                error(field, "“mouseButton” is a button number from 3 (the middle) up; left and right clicks stay yours.")
+                return nil
+            }
+            return .mouseButton(Int(number))
+        case "appOpens":
+            return app(field).map { .appOpens($0) }
+        case "typed":
+            guard let letters = field.string, letters.count >= 2, !letters.contains(where: \.isWhitespace) else {
+                error(field, "“typed” takes at least two letters with no spaces, in quotes, like \";sig\".")
+                return nil
+            }
+            return .typed(letters)
+        case "at":
+            guard let text = field.string, let minutes = ConfigFile.minutes(text) else {
+                error(field, "“at” is a time, written like \"09:00\".")
+                return nil
+            }
+            return .time(minutes)
+        default:
+            return nil
+        }
+    }
+
+    /// One `action`, or `steps` in order.
+    mutating func steps(_ trigger: JSONNode) -> [TriggerAction]? {
+        if let field = trigger["steps"] {
+            if let other = trigger["action"] {
+                error(other, "A trigger has an “action” or “steps”, not both. Put the action in the steps.")
+                return nil
+            }
+            guard let items = field.array, !items.isEmpty else {
+                error(field, "“steps” should be a list of at least one step, like [{ \"openApp\": \"com.apple.Notes\" }].")
+                return nil
+            }
+            let steps = items.map { action($0, example: "Each step is one thing to do, like { \"openApp\": \"com.apple.Notes\" }.") }
+            return steps.contains(nil) ? nil : steps.compactMap { $0 }
+        }
+        guard let node = trigger["action"] else {
+            error(trigger, "A trigger needs an action, like { \"openApp\": \"com.apple.Notes\" }.")
+            return nil
+        }
+        return action(node, example: "A trigger needs an action, like { \"openApp\": \"com.apple.Notes\" }.").map { [$0] }
+    }
+
+    mutating func action(_ node: JSONNode, example: String) -> TriggerAction? {
+        guard let members = node.object, !members.isEmpty else {
+            error(node, example)
             return nil
         }
         guard members.count == 1, let member = members.first else {
@@ -296,6 +363,15 @@ private struct Reader {
                 return nil
             }
             return .open(target)
+        case .typeText:
+            guard let text = value.string, !text.isEmpty else { error(value, "“typeText” takes the text to type, in quotes."); return nil }
+            return .typeText(text)
+        case .wait:
+            guard case let .number(seconds) = value.kind, seconds > 0, seconds <= TriggerAction.longestWait else {
+                error(value, "“wait” takes a number of seconds, from more than 0 up to 3600 (an hour), like 0.5 or 90.")
+                return nil
+            }
+            return .wait(seconds)
         }
     }
 
@@ -391,12 +467,24 @@ enum Writer {
     }
 
     static func trigger(_ t: Trigger) -> JSONValue {
-        var members: [(String, JSONValue)] = [
-            ("name", .string(t.name)),
-            ("keys", t.keys.isEmpty ? .null : t.keys.count == 1 ? .string(t.keys[0].text) : .array(t.keys.map { .string($0.text) })),
-        ]
+        var members: [(String, JSONValue)] = [("name", .string(t.name))]
+        func one(_ values: [JSONValue]) -> JSONValue { values.count == 1 ? values[0] : .array(values) }
+        if t.starts.contains(.keys) || t.starts.isEmpty {
+            members.append(("keys", t.keys.isEmpty ? .null : one(t.keys.map { .string($0.text) })))
+        }
+        let buttons = t.starts.compactMap { if case let .mouseButton(n) = $0 { JSONValue.number(Double(n)) } else { nil } }
+        let apps = t.starts.compactMap { if case let .appOpens(app) = $0 { JSONValue.string(app.bundleID) } else { nil } }
+        let letters = t.starts.compactMap { if case let .typed(text) = $0 { JSONValue.string(text) } else { nil } }
+        let times = t.starts.compactMap { if case let .time(m) = $0 { JSONValue.string(ConfigFile.clock(m)) } else { nil } }
+        for (name, values) in [("mouseButton", buttons), ("appOpens", apps), ("typed", letters), ("at", times)] where !values.isEmpty {
+            members.append((name, one(values)))
+        }
         if !t.isEnabled { members.append(("enabled", .bool(false))) }
-        members.append(("action", action(t.action)))
+        if t.steps.count == 1 {
+            members.append(("action", action(t.steps[0])))
+        } else {
+            members.append(("steps", .array(t.steps.map(action))))
+        }
         if !t.apps.isEmpty { members.append(("apps", .array(t.apps.map { .string($0.bundleID) }))) }
         if let when = conditions(t.conditions) { members.append(("when", when)) }
         return .object(members + t.extra.members)
@@ -409,6 +497,8 @@ enum Writer {
         case let .runShortcut(name): .string(name)
         case .passThrough: .bool(true)
         case let .open(target): .string(target)
+        case let .typeText(text): .string(text)
+        case let .wait(seconds): .number(seconds)
         }
         return .object([(action.kind.rawValue, value)])
     }

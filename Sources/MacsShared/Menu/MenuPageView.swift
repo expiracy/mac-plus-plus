@@ -15,8 +15,11 @@ public struct MenuPageView: View {
     @Environment(\.openHelp) private var openHelp
     @State private var hoveredRow: String?
     @State private var hoveredTrash: String?
+    @State private var hoveredEdit: String?
     @State private var hoveredAdd: String?
     @State private var drag: RowDrag?
+    /// The scrolling lists scrolled to their foot, by group: they no longer fade out at the bottom.
+    @State private var atFoot: Set<String> = []
 
     public init(model: MenuPageModel) {
         self.model = model
@@ -31,11 +34,11 @@ public struct MenuPageView: View {
 
     enum Metric {
         static let edge: CGFloat = 12
-        static let row: CGFloat = 38
+        static let row: CGFloat = CardStyle.rowHeight
         /// Each row is a card of its own, this far from the next.
-        static let gap: CGFloat = 6
+        static let gap: CGFloat = CardStyle.rowGap
         static let pitch: CGFloat = row + gap
-        static let rowCorner: CGFloat = 10
+        static let rowCorner: CGFloat = CardStyle.rowCorner
         static let corner: CGFloat = CardStyle.corner
         static let tile: CGFloat = 24
         /// A list taller than this many rows scrolls; the half row peeking out says there is more.
@@ -61,7 +64,9 @@ public struct MenuPageView: View {
             }
         }
         .padding(Metric.edge)
-        .overlayPreferenceValue(SubmenuAnchorKey.self) { anchors in submenuLayer(anchors) }
+        .overlayPreferenceValue(SubmenuAnchorKey.self) { anchors in
+            submenuLayer(anchors)
+        }
     }
 
     // MARK: - A row's choices
@@ -92,6 +97,32 @@ public struct MenuPageView: View {
                 }
             }
         }
+    }
+
+    /// What an open row stands for, under it on its card: each section's heading and its chips.
+    private func peekDetails(_ entry: MenuEntry) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ForEach(Array(entry.peek.enumerated()), id: \.offset) { _, section in
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(section.title).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                    PeekChips(spacing: 4) {
+                        ForEach(Array(section.items.enumerated()), id: \.offset) { index, item in
+                            Text(section.numbered ? "\(index + 1)  \(item)" : item)
+                                .font(.callout)
+                                .lineLimit(1)
+                                .foregroundStyle(section.numbered ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(.primary))
+                                .padding(.horizontal, 7)
+                                .frame(height: 22)
+                                .background(RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                    .fill(section.numbered ? Color.accentColor.opacity(0.14) : Color.primary.opacity(0.07)))
+                        }
+                    }
+                }
+            }
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
     }
 
     /// The bubble's height: its rows, its padding and its nub.
@@ -243,18 +274,34 @@ public struct MenuPageView: View {
                     .padding(12)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .modifier(RowCard(lifted: false))
-            } else if CGFloat(group.rows.count) > Metric.visibleRows {
+            } else if CGFloat(group.rows.count) > group.visibleRows ?? Metric.visibleRows {
                 ScrollViewReader { proxy in
-                    ScrollView { rows(group.rows, in: group) }
-                        .frame(height: Metric.visibleRows * Metric.pitch - Metric.gap)
-                        // The half row at the foot fades out, so it reads as more to scroll to.
+                    let fades = !atFoot.contains(group.id)
+                    let height = (group.visibleRows ?? Metric.visibleRows) * Metric.pitch - Metric.gap
+                    let space = "list-" + group.id
+                    ScrollView {
+                        rows(group.rows, in: group)
+                            // Where the list ends inside its frame: at or above the frame's foot, it's
+                            // scrolled to the bottom.
+                            .background(GeometryReader { geometry in
+                                let end = geometry.frame(in: .named(space)).maxY
+                                Color.clear.onChange(of: end <= height + 2, initial: true) { _, at in
+                                    if at { atFoot.insert(group.id) } else { atFoot.remove(group.id) }
+                                }
+                            })
+                    }
+                        .coordinateSpace(name: space)
+                        .frame(height: height)
+                        // The half row at the foot fades out, so it reads as more to scroll to; at the
+                        // foot of the list, the last row shows in full.
                         .mask {
                             VStack(spacing: 0) {
                                 Color.black
-                                LinearGradient(colors: [.black, .black.opacity(0.15)], startPoint: .top, endPoint: .bottom)
+                                LinearGradient(colors: [.black, .black.opacity(fades ? 0.15 : 1)], startPoint: .top, endPoint: .bottom)
                                     .frame(height: 20)
                             }
                         }
+
                         // A row just added to be named is at the foot of the list: bring it into view.
                         .onChange(of: model.content.renaming, initial: true) { _, id in
                             guard let id, group.rows.contains(where: { $0.id == id }) else { return }
@@ -278,9 +325,22 @@ public struct MenuPageView: View {
         return VStack(spacing: Metric.gap) {
             ForEach(Array(entries.enumerated()), id: \.element.id) { index, entry in
                 let lifted = dragging && drag?.from == index
-                row(entry, handle: movable.map { RowHandle(group: $0, index: index, count: entries.count) })
+                let open = model.peeking == entry.id
+                VStack(spacing: 0) {
+                    row(entry, handle: movable.map { RowHandle(group: $0, index: index, count: entries.count) })
+                    if open {
+                        Divider().padding(.leading, 10)
+                        peekDetails(entry)
+                    }
+                }
                     .id(entry.id)
                     .modifier(RowCard(lifted: lifted))
+                    .overlay {
+                        if open {
+                            RoundedRectangle(cornerRadius: Metric.rowCorner, style: .continuous)
+                                .strokeBorder(Color.accentColor.opacity(0.45))
+                        }
+                    }
                     .offset(y: rowOffset(index, count: entries.count, dragging: dragging))
                     .animation(lifted ? nil : .easeOut(duration: 0.15),
                                value: rowOffset(index, count: entries.count, dragging: dragging))
@@ -328,7 +388,10 @@ public struct MenuPageView: View {
                 .onTapGesture { tap?() }
                 .gesture(DragGesture(minimumDistance: 2, coordinateSpace: .global)
                     .onChanged { value in
-                        if drag == nil { NSCursor.closedHand.push() }
+                        if drag == nil {
+                            NSCursor.closedHand.push()
+                            model.closePeek()   // rows are dragged a row's height at a time
+                        }
                         drag = RowDrag(group: handle.group.id, from: handle.index, height: value.translation.height)
                     }
                     .onEnded { _ in
@@ -351,15 +414,19 @@ public struct MenuPageView: View {
     private func rowEnd(_ entry: MenuEntry, dim: Bool) -> some View {
         HStack(spacing: 4) {
             if let trailing = entry.trailing {
-                Text(trailing).font(.callout.monospacedDigit())
-                    .foregroundStyle(dim ? AnyShapeStyle(.tertiary) : AnyShapeStyle(.secondary))
-                    .lineLimit(1)
-                    .fixedSize()
-                    .accessibilityLabel(entry.trailingLabel.map { "\($0) \(trailing)" } ?? trailing)
+                if entry.peek.isEmpty {
+                    Text(trailing).font(.callout.monospacedDigit())
+                        .foregroundStyle(dim ? AnyShapeStyle(.tertiary) : AnyShapeStyle(.secondary))
+                        .lineLimit(1)
+                        .fixedSize()
+                        .accessibilityLabel(entry.trailingLabel.map { "\($0) \(trailing)" } ?? trailing)
+                } else {
+                    peekButton(entry, trailing, dim: dim)
+                }
             }
             HStack(spacing: 0) {
                 if let secondary = entry.secondary {
-                    secondaryButton(entry, secondary, hovered: hoveredRow == entry.id)
+                    secondaryButton(entry, secondary, hovered: hoveredEdit == entry.id)
                 }
                 if entry.trash != nil { trashButton(entry) }
             }
@@ -385,7 +452,14 @@ public struct MenuPageView: View {
             }
             .padding(.horizontal, 10)
             .frame(height: Metric.row)
-            .background(Color.primary.opacity(hoveredRow == entry.id ? 0.04 : 0))
+            .background(Color.primary.opacity(hoveredRow == entry.id || model.peeking == entry.id ? 0.04 : 0))
+            .contentShape(Rectangle())
+            // A row that peeks opens in place wherever it's clicked (its buttons and switch keep
+            // their own clicks).
+            .onTapGesture {
+                guard !entry.peek.isEmpty, !renaming(entry) else { return }
+                withAnimation(.easeOut(duration: 0.15)) { model.togglePeek(entry) }
+            }
             .onHover { hover(entry, $0) }
             .disabled(disabled)
         case let .choice(options, selected):
@@ -467,7 +541,28 @@ public struct MenuPageView: View {
         if !inside { withAnimation(.bouncy(duration: 0.3)) { model.cancelTrash(entry) } }
     }
 
-    /// A row's second button (Edit): quiet until its row is under the pointer.
+    /// A row's trigger label that opens the row in place: "Hyper W +2", on a soft capsule under the
+    /// pointer and while the row is open.
+    private func peekButton(_ entry: MenuEntry, _ text: String, dim: Bool) -> some View {
+        let open = model.peeking == entry.id
+        return Button {
+            withAnimation(.easeOut(duration: 0.15)) { model.togglePeek(entry) }
+        } label: {
+            Text(text).font(.callout.monospacedDigit())
+                .foregroundStyle(dim ? AnyShapeStyle(.tertiary) : AnyShapeStyle(.secondary))
+                .lineLimit(1)
+                .fixedSize()
+                .padding(.horizontal, 6)
+                .frame(height: 22)
+                .background(Capsule().fill(Color.primary.opacity(open ? 0.12 : hoveredRow == entry.id ? 0.07 : 0)))
+                .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .help("Show everything that starts it and what it does")
+        .accessibilityLabel((entry.trailingLabel.map { "\($0) \(text)" } ?? text) + ", show details")
+    }
+
+    /// A row's second button (Edit): quiet until it is under the pointer.
     private func secondaryButton(_ entry: MenuEntry, _ secondary: (symbol: String, help: String, action: () -> Void),
                                  hovered: Bool) -> some View {
         Button { model.runSecondary(entry) } label: {
@@ -482,6 +577,7 @@ public struct MenuPageView: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .onHover { inside in hoveredEdit = inside ? entry.id : (hoveredEdit == entry.id ? nil : hoveredEdit) }
         .help(secondary.help)
         .accessibilityLabel("\(secondary.help) \(entry.title)")
     }
@@ -617,19 +713,27 @@ public struct MenuPageView: View {
         case .symbol:
             IconTile(symbol: entry.symbol ?? "circle", tint: tint, size: Metric.tile)
                 .frame(width: Metric.tile + 2)
+        case .none:
+            EmptyView()
         }
     }
 }
 
-/// A tool's main switch, as a pill: a power mark and On, filled with the accent, while it is on;
+/// A tool's main switch (or anything's on and off), as a pill: a power mark and On, filled with the accent, while it is on;
 /// grey and Off while it is off.
-private struct PowerButton: View {
+public struct PowerButton: View {
     let name: String
     let isOn: Bool
     let action: () -> Void
     @State private var hovering = false
 
-    var body: some View {
+    public init(name: String, isOn: Bool, action: @escaping () -> Void) {
+        self.name = name
+        self.isOn = isOn
+        self.action = action
+    }
+
+    public var body: some View {
         Button(action: action) {
             HStack(spacing: 5) {
                 Image(systemName: "power").font(.system(size: 11, weight: .bold))
@@ -678,10 +782,14 @@ private struct RowActions: ViewModifier {
 
 /// A row drawn as a card of its own: faintly filled with a hairline edge; lifted (being dragged), it
 /// stands off the page on a tint of the accent with a shadow.
-private struct RowCard: ViewModifier {
+public struct RowCard: ViewModifier {
     let lifted: Bool
 
-    func body(content: Content) -> some View {
+    public init(lifted: Bool = false) {
+        self.lifted = lifted
+    }
+
+    public func body(content: Content) -> some View {
         let shape = RoundedRectangle(cornerRadius: MenuPageView.Metric.rowCorner, style: .continuous)
         content
             .clipShape(shape)
@@ -707,6 +815,35 @@ extension MenuEntry {
     var switchedOn: Bool? {
         if case let .toggle(isOn, _, _) = kind { return isOn }
         return nil
+    }
+}
+
+/// Chips in lines, wrapping, for an open row.
+private struct PeekChips: Layout {
+    var spacing: CGFloat
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let width = proposal.width ?? 260
+        var x: CGFloat = 0, y: CGFloat = 0, line: CGFloat = 0
+        for view in subviews {
+            let size = view.sizeThatFits(.unspecified)
+            if x > 0, x + size.width > width { x = 0; y += line + spacing; line = 0 }
+            x += size.width + spacing
+            line = max(line, size.height)
+        }
+        return CGSize(width: width, height: y + line)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        var x = bounds.minX, y = bounds.minY, line: CGFloat = 0
+        for view in subviews {
+            let size = view.sizeThatFits(.unspecified)
+            let fitted = CGSize(width: min(size.width, bounds.width), height: size.height)
+            if x > bounds.minX, x + fitted.width > bounds.maxX { x = bounds.minX; y += line + spacing; line = 0 }
+            view.place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(fitted))
+            x += fitted.width + spacing
+            line = max(line, fitted.height)
+        }
     }
 }
 

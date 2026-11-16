@@ -3,7 +3,8 @@ import AppKit
 import MacsBoredCore
 
 /// The keyboard event tap: every key-down, key-up and modifier change passes through `KeyRouter`
-/// before the system acts on it. It runs on its own thread with its own run loop, so a slow main
+/// before the system acts on it. It also sees mouse buttons, for actions started by the middle or
+/// side buttons, and watches what is typed, for actions started by typing a few letters. It runs on its own thread with its own run loop, so a slow main
 /// thread (an app slow to answer Accessibility) never delays a key; the main thread only hands it a
 /// fresh `KeyRouter.Setup` when something changes, and hears back about triggers and the pause.
 ///
@@ -19,6 +20,9 @@ final class KeyboardTap {
     private var _setup = KeyRouter.Setup(plan: .inactive, triggers: [], context: AppContext(),
                                          pauseKeys: nil, hyperKeyEnabled: false)
     private var router = KeyRouter()   // tap thread only
+    private var typed = TypedLetters()   // tap thread only
+    /// Mouse buttons whose click ran an action: their release goes nowhere too.
+    private var takenButtons: Set<Int> = []   // tap thread only
     private var port: CFMachPort?
     private var thread: Thread?
     private(set) var isRunning = false
@@ -34,6 +38,8 @@ final class KeyboardTap {
         guard !isRunning else { return true }
         let mask = (1 << CGEventType.keyDown.rawValue) | (1 << CGEventType.keyUp.rawValue)
             | (1 << CGEventType.flagsChanged.rawValue)
+            | (1 << CGEventType.otherMouseDown.rawValue) | (1 << CGEventType.otherMouseUp.rawValue)
+            | (1 << CGEventType.leftMouseDown.rawValue) | (1 << CGEventType.rightMouseDown.rawValue)
         let me = Unmanaged.passUnretained(self).toOpaque()
         guard let port = CGEvent.tapCreate(tap: .cghidEventTap, place: .headInsertEventTap, options: .defaultTap,
                                            eventsOfInterest: CGEventMask(mask), callback: keyboardTapCallback,
@@ -65,6 +71,11 @@ final class KeyboardTap {
             return Unmanaged.passUnretained(event)
         case .keyDown, .keyUp, .flagsChanged:
             break
+        case .leftMouseDown, .rightMouseDown:
+            typed.reset()   // a click moves the caret: what was typed before no longer counts
+            return Unmanaged.passUnretained(event)
+        case .otherMouseDown, .otherMouseUp:
+            return mouseButton(type: type, event: event)
         default:
             return Unmanaged.passUnretained(event)
         }
@@ -78,6 +89,17 @@ final class KeyboardTap {
         let setup = self.setup
         let decision = router.route(key, setup)
         let swapped = setup.plan.isActive && setup.plan.modifierLayout == .swapCommandControl
+
+        if type == .keyDown {
+            if decision == .pass, let typed = typedTrigger(event, key, setup) {
+                // The last letter goes nowhere; the ones before it are taken back out.
+                Self.pressDelete(times: typed.letters.count - 1)
+                let id = typed.trigger.id
+                DispatchQueue.main.async { [weak self] in self?.onDecision(.runTrigger(id)) }
+                return nil
+            }
+            if decision != .pass { typed.reset() }
+        }
 
         switch decision {
         case .pass:
@@ -96,6 +118,53 @@ final class KeyboardTap {
             return nil
         case .swallow:
             return nil
+        }
+    }
+
+    /// A middle or side button's click runs the action it starts, and its release goes with it.
+    private func mouseButton(type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>? {
+        let number = Int(event.getIntegerValueField(.mouseEventButtonNumber)) + 1
+        if type == .otherMouseUp {
+            return takenButtons.remove(number) != nil ? nil : Unmanaged.passUnretained(event)
+        }
+        typed.reset()
+        let setup = self.setup
+        guard event.getIntegerValueField(.eventSourceUserData) != Self.ownEventTag,
+              let trigger = setup.triggers.first(where: {
+                  $0.fires(onMouseButton: number, context: setup.context, passthroughActive: setup.plan.isActive)
+              }) else { return Unmanaged.passUnretained(event) }
+        takenButtons.insert(number)
+        DispatchQueue.main.async { [weak self] in self?.onDecision(.runTrigger(trigger.id)) }
+        return nil
+    }
+
+    /// The action whose letters this key finishes typing, if any. A shortcut (⌘ or ⌃ held), or a key
+    /// that types nothing (an arrow, ⌫, return), starts the letters again.
+    private func typedTrigger(_ event: CGEvent, _ key: KeyEvent, _ setup: KeyRouter.Setup) -> (trigger: Trigger, letters: String)? {
+        guard TypedLetters.watches(setup.triggers) else { return nil }
+        guard key.modifiers.isDisjoint(with: [.command, .control]) else { typed.reset(); return nil }
+        var length = 0
+        var units = [UniChar](repeating: 0, count: 8)
+        event.keyboardGetUnicodeString(maxStringLength: units.count, actualStringLength: &length, unicodeString: &units)
+        let text = String(utf16CodeUnits: units, count: length)
+        guard !text.isEmpty, !text.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains) else {
+            typed.reset()
+            return nil
+        }
+        return typed.add(text, triggers: setup.triggers, context: setup.context)
+    }
+
+    /// ⌫, pressed and let go, `times` times.
+    private static func pressDelete(times: Int) {
+        guard times > 0 else { return }
+        let source = CGEventSource(stateID: .hidSystemState)
+        for _ in 0..<times {
+            for down in [true, false] {
+                guard let event = CGEvent(keyboardEventSource: source, virtualKey: 51, keyDown: down) else { continue }
+                event.flags = []
+                event.setIntegerValueField(.eventSourceUserData, value: ownEventTag)
+                event.post(tap: .cgSessionEventTap)
+            }
         }
     }
 
