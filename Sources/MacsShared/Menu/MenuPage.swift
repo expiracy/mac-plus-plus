@@ -37,16 +37,19 @@ public struct MenuGroup: Identifiable {
     public var move: ((Int, Int) -> Void)?
     /// Making a new row ("New preset"): the + at the end of the title, there even while it is folded.
     public var add: MenuEntry?
+    /// How many rows show before the rest scroll (a half row hints at more); nil for the usual.
+    public var visibleRows: CGFloat?
     public var id: String { title }
 
     public init(title: String, rows: [MenuEntry], add: MenuEntry? = nil, actions: [MenuEntry] = [],
-                empty: String? = nil, move: ((Int, Int) -> Void)? = nil) {
+                empty: String? = nil, move: ((Int, Int) -> Void)? = nil, visibleRows: CGFloat? = nil) {
         self.title = title
         self.rows = rows
         self.add = add
         self.actions = actions
         self.empty = empty
         self.move = move
+        self.visibleRows = visibleRows
     }
 }
 
@@ -79,6 +82,22 @@ public struct MenuEntry: Identifiable {
         case appIcon(NSImage)
         /// A drawing of the tool's own (MacsPane's layout shapes), `width` wide.
         case drawing(AnyView, width: CGFloat)
+        /// Nothing: the title starts the row.
+        case none
+    }
+
+    /// One part of what a row lists when it opens in place: a heading ("When") and its items,
+    /// numbered when their order matters.
+    public struct PeekSection {
+        public var title: String
+        public var items: [String]
+        public var numbered: Bool
+
+        public init(_ title: String, _ items: [String], numbered: Bool = false) {
+            self.title = title
+            self.items = items
+            self.numbered = numbered
+        }
     }
 
     public let title: String
@@ -106,6 +125,9 @@ public struct MenuEntry: Identifiable {
     public var trailing: String?
     /// What `trailing` is, for VoiceOver ("Shortcut").
     public var trailingLabel: String?
+    /// Everything the row stands for, shown in place under it, on its card, when the row or its
+    /// `trailing` (which then reads as a button) is clicked.
+    public var peek: [PeekSection] = []
     /// A command that offers a choice: clicking it opens these as a small menu, and each runs as a row would.
     public var submenu: [MenuEntry] = []
 
@@ -221,6 +243,19 @@ public final class MenuPageModel: ObservableObject {
     @Published public var confirmingTrash: String?
     /// The row whose choices hang under it in a small bubble.
     @Published public var openSubmenu: String?
+    /// The row opened in place to show its peek (what starts it and what it does); one at a time.
+    @Published public var peeking: String?
+
+    /// A row that peeks clicked: it opens in place, or closes if it was open.
+    public func togglePeek(_ entry: MenuEntry) {
+        if peeking == entry.id { closePeek(); return }
+        openSubmenu = nil
+        peeking = entry.id
+    }
+
+    public func closePeek() {
+        peeking = nil
+    }
     /// The sections folded to their title, by title; remembered for the page.
     @Published public private(set) var collapsed: Set<String>
     /// The empty sections opened by hand (an empty section starts folded); remembered for the page.
@@ -355,6 +390,7 @@ public final class MenuPageTab: MenuTab {
     public func subpage(_ name: String) -> TabbedMenuSubpage? { pages(name) }
 
     public var title: String { model.brand.name }
+    public var shownTitle: String { model.brand.feature ?? model.brand.name }
     public func icon() -> AnyView { AnyView(Image(systemName: model.brand.symbol)) }
     public func page() -> AnyView { AnyView(MenuPageView(model: model)) }
     public func refresh() { model.refresh() }
@@ -376,6 +412,8 @@ public final class MenuPageTab: MenuTab {
             model.finishRename(cancel: true)
         } else if model.openSubmenu != nil {
             model.openSubmenu = nil
+        } else if model.peeking != nil {
+            model.closePeek()
         } else {
             return false
         }
@@ -385,6 +423,7 @@ public final class MenuPageTab: MenuTab {
     public func willHide() {
         model.finishRename()   // a name being typed in place is kept
         model.openSubmenu = nil
+        model.closePeek()
         model.confirmingTrash = nil
     }
 }

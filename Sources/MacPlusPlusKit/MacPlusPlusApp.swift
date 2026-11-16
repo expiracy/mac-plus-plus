@@ -17,8 +17,8 @@ import MacsShared
 ///   --open-settings          Open the dropdown on mac++'s Settings.
 ///   --open-help [macspane|macsbored]   Open the dropdown on that tool's Help, or on mac++'s.
 ///   --open-new-shortcut      Open the dropdown on MacsPane's New Shortcut page.
-///   --open-editor macspane | remap|open|shortcut|passthrough   Open MacsPane's box editor, or
-///                            the dropdown on MacsBored's editor, on a new entry of that kind.
+///   --open-editor macspane | action [keys|mouseButton|appOpens|appInFront|typed|time]   Open MacsPane's
+///                            box editor, or the dropdown on a new action (with that trigger chosen).
 ///   --snapshot-menu <dir>    Write the dropdown's pages, their Help, Settings and mac++'s Help as PNGs, then quit.
 ///   --snapshot-windows <dir> Write every onboarding step as PNGs, then quit.
 ///   --export-icon <dir>      Write the app icon's faces and marks layer (for scripts/make_icon.sh).
@@ -199,7 +199,8 @@ final class MacPlusPlusAppDelegate: NSObject, NSApplicationDelegate {
         case "macspane": pane.openEditor()
         case let kind?:
             menu?.show(tab: Page.macsBored.rawValue)
-            bored.openEditor(kind)
+            let next = value(after: kind)
+            bored.openEditor(kind == "action" ? next : kind)
         }
         if let directory = value(after: "--snapshot-menu") {
             TabbedMenuSnapshot.write(tabs: tabs, pages: { [weak self] in self?.settings.page($0) },

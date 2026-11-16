@@ -505,6 +505,11 @@ struct TabbedMenuView: View {
         .frame(width: Metric.width)
         .background(SpeechBubbleShape(nubX: model.nubX).fill(Color(nsColor: .windowBackgroundColor)))
         .overlay(SpeechBubbleShape(nubX: model.nubX).stroke(Color.primary.opacity(0.12), lineWidth: 1))
+        .overlayPreferenceValue(FloatingLayerKey.self) { layer in
+            GeometryReader { proxy in
+                if let layer { layer.content(proxy[layer.anchor], proxy.size) }
+            }
+        }
     }
 
     /// The band across the top of the bubble, the tabs over a tool's page or the navigation bar over
@@ -544,7 +549,7 @@ struct TabbedMenuView: View {
     /// A page opened over a tool's page has a navigation bar, as in System Settings: back, named for
     /// the page it goes to (`esc` does the same), and the page's title in the middle.
     private func subpageHeader(_ top: TabbedMenuPage) -> some View {
-        let previous = model.stack.count > 1 ? model.stack[model.stack.count - 2].title : model.current.title
+        let previous = model.stack.count > 1 ? model.stack[model.stack.count - 2].title : model.current.shownTitle
         return ZStack {
             Text(top.title)
                 .font(.system(size: 13, weight: .semibold))
@@ -613,8 +618,8 @@ struct TabbedMenuView: View {
                     }
                     .buttonStyle(.plain)
                     .onHover { hovered = $0 ? index : (hovered == index ? nil : hovered) }
-                    .help("\(tab.title) (⌘\(index + 1))")
-                    .accessibilityLabel(tab.title)
+                    .help("\(tab.shownTitle) (⌘\(index + 1))")
+                    .accessibilityLabel(tab.shownTitle)
                     .accessibilityAddTraits(chosen ? [.isSelected] : [])
                 }
             }

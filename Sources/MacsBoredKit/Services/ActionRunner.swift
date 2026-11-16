@@ -2,9 +2,25 @@
 import AppKit
 import MacsBoredCore
 
-/// Does what a trigger says: presses other keys, opens an app, a link or a file, or runs one of
-/// Apple's Shortcuts. Passing keys through is the keyboard tap's job, so it never reaches here.
+/// Does what an action says, step by step: presses other keys, types text, opens an app, a link or
+/// a file, runs one of Apple's Shortcuts, or waits. Passing keys through is the keyboard tap's job,
+/// so it never reaches here.
+@MainActor
 enum ActionRunner {
+    /// The steps in order, with a moment between each so an app just opened is ready for the next.
+    static func run(_ steps: [TriggerAction]) {
+        Task { @MainActor in
+            for (index, step) in steps.enumerated() {
+                if case let .wait(seconds) = step {
+                    try? await Task.sleep(for: .seconds(seconds))
+                    continue
+                }
+                if index > 0 { try? await Task.sleep(for: .milliseconds(150)) }
+                run(step)
+            }
+        }
+    }
+
     static func run(_ action: TriggerAction) {
         switch action {
         case let .sendKeys(keys):
@@ -23,8 +39,28 @@ enum ActionRunner {
             NSWorkspace.shared.open(url)
         case let .runShortcut(name):
             runShortcut(name)
-        case .passThrough:
+        case let .typeText(text):
+            type(text)
+        case .passThrough, .wait:
             break
+        }
+    }
+
+    /// The text as key presses carrying the characters themselves, so it types the same whatever the
+    /// keyboard layout. macOS takes up to 20 characters an event.
+    static func type(_ text: String) {
+        let source = CGEventSource(stateID: .hidSystemState)
+        var units = Array(text.utf16)[...]
+        while !units.isEmpty {
+            let chunk = Array(units.prefix(20))
+            units = units.dropFirst(chunk.count)
+            for down in [true, false] {
+                guard let event = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: down) else { continue }
+                event.flags = []
+                chunk.withUnsafeBufferPointer { event.keyboardSetUnicodeString(stringLength: $0.count, unicodeString: $0.baseAddress) }
+                event.setIntegerValueField(.eventSourceUserData, value: KeyboardTap.ownEventTag)
+                event.post(tap: .cgSessionEventTap)
+            }
         }
     }
 
@@ -42,7 +78,7 @@ enum ActionRunner {
     }
 
     /// The names of your Shortcuts, as the Shortcuts app lists them.
-    static func shortcutNames() -> [String] {
+    nonisolated static func shortcutNames() -> [String] {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/shortcuts")
         process.arguments = ["list"]

@@ -61,17 +61,17 @@ final class ConfigFileTests: XCTestCase {
 
         let t = config.triggers
         XCTAssertEqual(t.map(\.name), ["Focus timer", "Spotlight", "Open Notes", "Shot", "Plan"])
-        XCTAssertEqual(t[0].action, .runShortcut("Start a Focus timer"))
+        XCTAssertEqual(t[0].steps, [.runShortcut("Start a Focus timer")])
         XCTAssertEqual(t[0].keys, [KeyCombo(text: "ctrl+opt+F")!])
-        XCTAssertEqual(t[1].action, .passThrough)
+        XCTAssertEqual(t[1].steps, [.passThrough])
         XCTAssertEqual(t[1].apps.map(\.bundleID), ["com.microsoft.rdc.macos"])
-        XCTAssertEqual(t[2].action, .openApp(AppRef(bundleID: "com.apple.Notes", name: "com.apple.Notes")))
+        XCTAssertEqual(t[2].steps, [.openApp(AppRef(bundleID: "com.apple.Notes", name: "com.apple.Notes"))])
         XCTAssertFalse(t[2].isEnabled)
         XCTAssertEqual(t[2].conditions.match, .all)
         XCTAssertEqual(t[2].conditions.conditions.map(\.kind), [.onBattery, .timeBetween(start: 540, end: 1050)])
         XCTAssertEqual(t[2].conditions.conditions.map(\.negated), [true, false])
-        XCTAssertEqual(t[3].action, .sendKeys(KeyCombo(text: "shift+cmd+4")!))
-        XCTAssertEqual(t[4].action, .open("~/Documents/plan.pdf"))
+        XCTAssertEqual(t[3].steps, [.sendKeys(KeyCombo(text: "shift+cmd+4")!)])
+        XCTAssertEqual(t[4].steps, [.open("~/Documents/plan.pdf")])
         XCTAssertEqual(t[4].conditions.match, .any)
         XCTAssertEqual(t[4].conditions.conditions.map(\.kind), [.fullScreen, .windowTitleContains("Prod")])
     }
@@ -102,7 +102,7 @@ final class ConfigFileTests: XCTestCase {
         XCTAssertEqual(reading.issues.count, 1)
         XCTAssertEqual(reading.issues.first?.line, 23)
         XCTAssertEqual(reading.issues.first?.message,
-                       "“openApps” isn't an action. Use sendKeys, openApp, runShortcut, passThrough or open.")
+                       "“openApps” isn't an action. Use sendKeys, openApp, runShortcut, passThrough, open, typeText or wait.")
     }
 
     func testEachKindOfMistakeIsCaught() {
@@ -167,7 +167,7 @@ final class ConfigFileTests: XCTestCase {
         let config = try XCTUnwrap(read(sample).config)
         let again = try XCTUnwrap(read(ConfigFile.written(config)).config)
         XCTAssertEqual(ConfigFile.written(again), ConfigFile.written(config))
-        XCTAssertEqual(again.triggers.map(\.action), config.triggers.map(\.action))
+        XCTAssertEqual(again.triggers.map(\.steps), config.triggers.map(\.steps))
         XCTAssertEqual(read(ConfigFile.written(config)).issues, [])
     }
 
@@ -240,7 +240,7 @@ final class ConfigFileTests: XCTestCase {
         XCTAssertEqual(profile.systemShortcuts, [.appSwitcher, .spotlight])
         XCTAssertEqual(profile.conditions, ConditionSet(match: .any, conditions: [Condition(.timeBetween(start: 60, end: 120), negated: true, id: profile.conditions.conditions[0].id)]))
         XCTAssertEqual(config.triggers.map(\.name), ["Home"])
-        XCTAssertEqual(config.triggers.first?.action, .sendKeys(KeyCombo(keyCode: 115, modifiers: [])))
+        XCTAssertEqual(config.triggers.first?.steps, [.sendKeys(KeyCombo(keyCode: 115, modifiers: []))])
         XCTAssertEqual(config.triggers.first?.keys, [KeyCombo(keyCode: 123, modifiers: .command)])
         XCTAssertEqual(config.triggers.first?.apps.map(\.name), ["Safari"])
         XCTAssertEqual(reading.issues, [ConfigFile.Issue(line: nil, message: "“Snippet” typed text, which MacsBored no longer does, so it was left out.", isWarning: true)])

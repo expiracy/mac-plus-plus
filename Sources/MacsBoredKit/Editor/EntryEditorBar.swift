@@ -60,7 +60,7 @@ struct EntryEditorBar: View {
             Button { withAnimation(.bouncy(duration: 0.3)) { confirmingDelete = true } } label: {
                 Image(systemName: "trash")
             }
-            .help(draft.isPassthroughApp ? "Delete this passthrough app" : "Delete this trigger")
+            .help(draft.isPassthroughApp ? "Delete this passthrough app" : "Delete this action")
             .accessibilityLabel("Delete")
         }
     }

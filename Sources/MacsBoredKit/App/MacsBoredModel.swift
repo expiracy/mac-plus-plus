@@ -34,6 +34,8 @@ final class MacsBoredModel: ObservableObject {
     private var timer: Timer?
     private var watcher: DispatchSourceFileSystemObject?
     private var observers: [NSObjectProtocol] = []
+    /// The minute the clock was on at the last look, for actions set for a time.
+    private var lastMinute: Int?
 
     init(store: MacsBoredConfigStore) {
         self.store = store
@@ -63,6 +65,12 @@ final class MacsBoredModel: ObservableObject {
                                             queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.tick() }
         })
+        observers.append(center.addObserver(forName: NSWorkspace.didLaunchApplicationNotification, object: nil,
+                                            queue: .main) { [weak self] note in
+            let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
+            let bundleID = app?.bundleIdentifier
+            MainActor.assumeIsolated { bundleID.map { self?.appOpened($0) } }
+        })
         timer = Timer.scheduledTimer(withTimeInterval: 0.4, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.tick() }
         }
@@ -88,6 +96,24 @@ final class MacsBoredModel: ObservableObject {
         if let paused = pausedFor, now.bundleID != paused { pausedFor = nil }
         if now != context { context = now }
         recompute()
+        reachTime(now.minuteOfDay)
+    }
+
+    /// Runs the actions set for a time the clock has just reached (or passed while the Mac slept).
+    private func reachTime(_ minute: Int) {
+        defer { lastMinute = minute }
+        guard let last = lastMinute, last != minute, config.isEnabled, !isRecording else { return }
+        for trigger in config.triggers where trigger.fires(from: last, to: minute, context: context) {
+            ActionRunner.run(trigger.steps)
+        }
+    }
+
+    /// Runs the actions set for this app opening.
+    private func appOpened(_ bundleID: String) {
+        guard config.isEnabled, !isRecording else { return }
+        for trigger in config.triggers where trigger.fires(onOpening: bundleID, context: context) {
+            ActionRunner.run(trigger.steps)
+        }
     }
 
     private func recompute() {
@@ -117,7 +143,7 @@ final class MacsBoredModel: ObservableObject {
             togglePause()
         case let .runTrigger(id):
             guard let trigger = config.triggers.first(where: { $0.id == id }) else { return }
-            ActionRunner.run(trigger.action)
+            ActionRunner.run(trigger.steps)
         default:
             break
         }
@@ -209,11 +235,14 @@ final class MacsBoredModel: ObservableObject {
 
     // MARK: - Entries
 
-    /// The editor on a new entry; its tabs say what it becomes.
-    func newEntry(_ tab: EntryDraft.Tab = .remap) {
-        var draft = EntryDraft()
-        draft.tab = tab
+    /// The editor on a new action: blank, or one of the ready-made starts.
+    func newEntry(_ draft: EntryDraft = EntryDraft()) {
         onEdit(draft)
+    }
+
+    /// Runs an action's steps now, to try it before saving.
+    func tryOut(_ steps: [TriggerAction]) {
+        ActionRunner.run(steps)
     }
 
     /// Setup's shortcut: a passthrough entry with the defaults for each app picked, straight away.
@@ -232,7 +261,19 @@ final class MacsBoredModel: ObservableObject {
 
     func editTrigger(_ id: UUID) {
         guard let trigger = config.triggers.first(where: { $0.id == id }) else { return }
-        onEdit(EntryDraft(trigger: trigger))
+        onEdit(Self.draft(for: trigger))
+    }
+
+    /// The editor's draft of a trigger, its apps named as Finder names them (the settings file
+    /// keeps only their bundle IDs), so the sentence and the chips read "Notes".
+    static func draft(for trigger: Trigger) -> EntryDraft {
+        var named = trigger
+        named.steps = trigger.steps.map { if case let .openApp(app) = $0 { .openApp(AppIcons.named(app)) } else { $0 } }
+        named.starts = trigger.starts.map { if case let .appOpens(app) = $0 { .appOpens(AppIcons.named(app)) } else { $0 } }
+        named.apps = trigger.apps.map(AppIcons.named)
+        var draft = EntryDraft(trigger: named)
+        if draft.customName.isEmpty, trigger.name != draft.suggestedName { draft.customName = trigger.name }
+        return draft
     }
 
     /// The trigger another one would take its keys from, for the editor's warning.

@@ -88,7 +88,7 @@ public struct KeyRouter: Sendable {
             if let trigger = setup.triggers.first(where: {
                 $0.fires(on: keys, context: setup.context, passthroughActive: setup.plan.isActive)
             }) {
-                if trigger.action == .passThrough {
+                if trigger.passesKeysThrough {
                     // Its own keys, straight to the app in front, ahead of macOS and other apps.
                     guard let pid = setup.context.processID else { return .pass }
                     forwardedUps[event.keyCode] = (pid, .asIs)

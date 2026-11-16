@@ -10,6 +10,10 @@ public enum CardStyle {
     public static let corner: CGFloat = 12
     public static let fill = Color.primary.opacity(0.035)
     public static let stroke = Color.primary.opacity(0.08)
+    /// A list's row, each a card of its own: its height, its corner and the gap to the next.
+    public static let rowHeight: CGFloat = 38
+    public static let rowCorner: CGFloat = 10
+    public static let rowGap: CGFloat = 6
 }
 
 /// A section's name over its cards: small capitals, spaced out, in the secondary colour.
