@@ -246,7 +246,9 @@ struct EditorSectionTitle: View {
 
 /// One row of the editor's lists, drawn as the Actions list draws its rows (a card each): its icon,
 /// what it is, its value and a bin. Click it and it opens in place, its controls under it on the same
-/// card, as the list's rows open; click it again to close it.
+/// card, as the list's rows open; click it again to close it. The bin asks first, as the list's does:
+/// clicked once it grows into a red pill asking "bin?", a second click removes the row, and leaving
+/// the row shrinks it back.
 struct EditorRow<Controls: View>: View {
     var number: Int? = nil
     let symbol: String
@@ -260,6 +262,7 @@ struct EditorRow<Controls: View>: View {
     @ViewBuilder var controls: Controls
     @State private var hovering = false
     @State private var hotBin = false
+    @State private var asking = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -274,24 +277,39 @@ struct EditorRow<Controls: View>: View {
                 if let value, !isOpen {
                     Text(value).font(.callout.monospacedDigit()).foregroundStyle(.secondary).lineLimit(1)
                 }
-                if let remove { Button(action: remove) {
-                    Image(systemName: "trash")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(hotBin ? AnyShapeStyle(Color.red) : AnyShapeStyle(.secondary))
-                        .frame(width: 26, height: 24)
-                        .contentShape(Rectangle())
+                if let remove { Button {
+                    if asking { asking = false; remove() }
+                    else { withAnimation(.bouncy(duration: 0.3, extraBounce: 0.15)) { asking = true } }
+                } label: {
+                    HStack(spacing: 1) {
+                        Image(systemName: "trash")
+                        if asking {
+                            Text("?").transition(.scale(scale: 0.3, anchor: .leading).combined(with: .opacity))
+                        }
+                    }
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(asking ? AnyShapeStyle(Color.white) : hotBin ? AnyShapeStyle(Color.red) : AnyShapeStyle(.secondary))
+                    .frame(width: asking ? 44 : 26, height: asking ? 22 : 24)
+                    .background {
+                        RoundedRectangle(cornerRadius: asking ? 11 : 6, style: .continuous)
+                            .fill(Color.red.opacity(asking ? 1 : hotBin ? 0.13 : 0))
+                    }
+                    .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .onHover { hotBin = $0 }
-                .help(removeHelp)
-                .accessibilityLabel("\(removeHelp): \(title)") }
+                .help(asking ? "Click again to remove" : removeHelp)
+                .accessibilityLabel(asking ? "Confirm \(removeHelp.lowercased()): \(title)" : "\(removeHelp): \(title)") }
             }
             .padding(.horizontal, 10)
             .frame(height: CardStyle.rowHeight)
             .background(Color.primary.opacity(hovering || isOpen ? 0.04 : 0))
             .contentShape(Rectangle())
             .onTapGesture(perform: toggle)
-            .onHover { hovering = $0 }
+            .onHover { inside in
+                hovering = inside
+                if !inside && asking { withAnimation(.bouncy(duration: 0.3, extraBounce: 0.15)) { asking = false } }
+            }
             .help(isOpen ? "Click to close" : "Click to change")
             .accessibilityElement(children: .contain)
             .accessibilityAddTraits(.isButton)
