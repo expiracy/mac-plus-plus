@@ -5,10 +5,9 @@ import SwiftUI
 import MacsBoredCore
 
 /// The one editor, for every action, as a page of the dropdown, drawn as the Actions list is: a card
-/// with its name, what it does in a sentence and its On button; then TRIGGERS and STEPS, each a list
-/// of row cards with + Add (a bubble of kinds) on the heading, a row opening in place to its
-/// controls when clicked; then WHERE AND WHEN, folded to a line until opened. Every section folds to
-/// its title. "An app is in front" is passthrough: on its own, with the app's settings in place of
+/// with its name, what it does in a sentence and its On button; then TRIGGERS, STEPS and WHERE AND
+/// WHEN, each a list of row cards with + Add on the heading (its kinds as pills where the new row
+/// will go), a row opening in place to its controls when clicked. Every section folds to its title. "An app is in front" is passthrough: on its own, with the app's settings in place of
 /// steps.
 struct EntryEditor: View {
     @ObservedObject var state: EntryEditorState
@@ -30,10 +29,16 @@ struct EntryEditor: View {
     @State private var shortcutNames: [String] = []
     /// The row whose controls are open ("when-keys", "step-<id>"); one at a time.
     @State private var openRow: String?
-    @State private var addingTrigger = false
-    @State private var addingStep = false
-    /// The sections folded to their title, by title: where and when starts folded, as the list's do.
-    @State private var folded: Set<String> = ["Where and when"]
+    /// Which section's + Add has its choices showing, if any.
+    @State private var adding: AddingTo?
+    private enum AddingTo {
+        case triggers, steps, limits
+        var section: String { self == .triggers ? "Triggers" : self == .steps ? "Steps" : "Where and when" }
+    }
+    private var addingTrigger: Bool { adding == .triggers }
+    private var addingStep: Bool { adding == .steps }
+    /// The sections folded to their title, by title: all start open.
+    @State private var folded: Set<String> = []
     @Environment(\.stepAway) private var stepAway
 
     /// The action only sends its own keys to the app in front.
@@ -71,8 +76,7 @@ struct EntryEditor: View {
     }
 
     private func toggleRow(_ key: String) {
-        addingTrigger = false
-        addingStep = false
+        adding = nil
         openRow = openRow == key ? nil : key
     }
 
@@ -114,7 +118,7 @@ struct EntryEditor: View {
                                trailing: draft.whens.count > 1 ? "Any of these starts it" : nil,
                                summary: draft.whens.map { triggerValue($0) ?? Self.cardTitle($0) }.joined(separator: " · "),
                                folded: shut, toggleFold: { toggleFold("Triggers") },
-                               add: draft.isPassthroughApp ? nil : { startAdding(trigger: true) },
+                               add: draft.isPassthroughApp ? nil : { startAdding(.triggers) },
                                addHelp: "Add a trigger", adding: addingTrigger)
             if !shut {
                 VStack(spacing: CardStyle.rowGap) {
@@ -142,17 +146,17 @@ struct EntryEditor: View {
             .map { when in .init(title: Self.cardTitle(when), symbol: when.symbol) {
                 withAnimation(.easeOut(duration: 0.15)) {
                     draft.add(when)
-                    addingTrigger = false
+                    adding = nil
                     openRow = "when-\(when.rawValue)"
                 }
             } }
     }
 
     /// + Add shows its choices at the end of the list, where the new row will go; again hides them.
-    private func startAdding(trigger: Bool) {
+    private func startAdding(_ section: AddingTo) {
         withAnimation(.easeOut(duration: 0.15)) {
-            if trigger { addingTrigger.toggle(); addingStep = false } else { addingStep.toggle(); addingTrigger = false }
-            if addingTrigger || addingStep { openRow = nil }
+            adding = adding == section ? nil : section
+            if adding != nil { openRow = nil; folded.remove(section.section) }
         }
     }
 
@@ -457,7 +461,7 @@ struct EntryEditor: View {
                                trailing: draft.steps.count > 1 ? "In order" : nil,
                                summary: draft.steps.map { $0.missing == nil ? $0.phrase : Self.title($0.kind) }.joined(separator: " · "),
                                folded: shut, toggleFold: { toggleFold("Steps") },
-                               add: passing ? nil : { startAdding(trigger: false) },
+                               add: passing ? nil : { startAdding(.steps) },
                                addHelp: "Add a step", adding: addingStep)
             if !shut {
                 VStack(spacing: CardStyle.rowGap) {
@@ -479,7 +483,7 @@ struct EntryEditor: View {
             withAnimation(.easeOut(duration: 0.15)) {
                 let step = EntryDraft.Step(kind)
                 draft.steps.append(step)
-                addingStep = false
+                adding = nil
                 openRow = "step-\(step.id)"
             }
         } }
@@ -667,39 +671,115 @@ struct EntryEditor: View {
 
     // MARK: - Where (triggers) and the passthrough app
 
-    /// Where it works (for what happens in an app: keys, clicks, typing) and when: folded to its
-    /// heading and a summary ("Everywhere · always") until opened.
+    /// Where it works (for what happens in an app: keys, clicks, typing) and when, as a list like
+    /// the others: none means everywhere, always. + Add offers "Only in some apps" and each kind of
+    /// condition; each is a row that opens in place, with its bin.
     private var whereSection: some View {
         let inApps = draft.whens.contains { [.keys, .mouseButton, .typed].contains($0) }
-        let place = inApps && draft.onlyInApps
+        let limitsApps = inApps && draft.onlyInApps
+        let conditions = draft.conditions.conditions
+        let place = limitsApps
             ? (draft.apps.isEmpty ? "In apps you choose" : "Only in " + draft.apps.map(AppIcons.name).joined(separator: ", "))
             : "Everywhere"
-        let count = draft.conditions.conditions.count
-        let summary = place + " · " + Self.conditionCount(count).lowercased()
+        let summary = place + " · " + Self.conditionCount(conditions.count).lowercased()
+        let shut = isFolded("Where and when")
         return VStack(alignment: .leading, spacing: CardStyle.rowGap) {
-            EditorSectionTitle(title: "Where and when", summary: summary,
-                               folded: isFolded("Where and when"), toggleFold: { toggleFold("Where and when") })
-            if !isFolded("Where and when") {
-                FormGroup {
-                    if inApps {
-                        FormRow(label: "Works", divider: false) {
-                            Picker("Works", selection: $state.draft.onlyInApps) {
-                                Text("Everywhere").tag(false)
-                                Text("Only in some apps").tag(true)
+            EditorSectionTitle(title: "Where and when", count: conditions.count + (limitsApps ? 1 : 0),
+                               summary: summary, folded: shut, toggleFold: { toggleFold("Where and when") },
+                               add: { startAdding(.limits) }, addHelp: "Limit where or when it works",
+                               adding: adding == .limits)
+            if !shut {
+                VStack(spacing: CardStyle.rowGap) {
+                    if limitsApps {
+                        EditorRow(symbol: "app.badge.checkmark", title: "Only in some apps",
+                                  value: draft.apps.isEmpty ? "Not set" : Self.list(draft.apps.map(AppIcons.name)),
+                                  isOpen: openRow == "where-apps", toggle: { toggleRow("where-apps") },
+                                  remove: { draft.onlyInApps = false; draft.apps = [] }, removeHelp: "Remove this limit") {
+                            AppChips(apps: $state.draft.apps, suggestions: runningApps, suggestionsTitle: "Open now", stepAway: stepAway)
+                        }
+                    }
+                    ForEach(conditions) { condition in
+                        EditorRow(symbol: condition.kind.symbol,
+                                  title: (condition.negated ? "Unless " : "Only if ") + condition.kind.title.lowercased(),
+                                  value: Self.conditionValue(condition.kind),
+                                  isOpen: openRow == "condition-\(condition.id)",
+                                  toggle: { toggleRow("condition-\(condition.id)") },
+                                  remove: { draft.conditions.conditions.removeAll { $0.id == condition.id } },
+                                  removeHelp: "Remove this condition") {
+                            ConditionControls(condition: conditionBinding(condition))
+                        }
+                    }
+                    if conditions.count > 1 {
+                        HStack(spacing: 8) {
+                            Text("Works when").font(.callout).foregroundStyle(.secondary)
+                            Picker("Works when", selection: $state.draft.conditions.match) {
+                                Text("All are true").tag(ConditionMatch.all)
+                                Text("Any is true").tag(ConditionMatch.any)
                             }
                             .pickerStyle(.segmented).controlSize(.small).labelsHidden().fixedSize()
                             Spacer()
                         }
-                        if draft.onlyInApps {
-                            FormRow(label: "Apps", top: true) {
-                                AppChips(apps: $state.draft.apps, suggestions: runningApps, suggestionsTitle: "Open now", stepAway: stepAway)
-                            }
-                        }
+                        .padding(.horizontal, 4)
                     }
-                    ConditionRows(conditions: $state.draft.conditions, label: "When", empty: "Always", dividedFromAbove: inApps)
+                    if adding == .limits {
+                        choices(limitChoices(inApps: inApps))
+                    } else if !limitsApps && conditions.isEmpty {
+                        EmptyNote(text: "Works everywhere, always. Click + Add to limit it.")
+                    }
                 }
             }
         }
+    }
+
+    /// What + Add offers under Where and when: the apps it works in (for keys, clicks and typing),
+    /// then each kind of condition not used yet (a window title can be checked for more than one text).
+    private func limitChoices(inApps: Bool) -> [AddChoice] {
+        var items: [AddChoice] = []
+        if inApps && !draft.onlyInApps {
+            items.append(.init(title: "Only in some apps", symbol: "app.badge.checkmark") {
+                withAnimation(.easeOut(duration: 0.15)) {
+                    draft.onlyInApps = true
+                    adding = nil
+                    openRow = "where-apps"
+                }
+            })
+        }
+        let used = Set(draft.conditions.conditions.map(\.kind.title))
+        for kind in Condition.Kind.templates where !used.contains(kind.title) || kind == .windowTitleContains("") {
+            items.append(.init(title: kind.title, symbol: kind.symbol) {
+                withAnimation(.easeOut(duration: 0.15)) {
+                    let condition = Condition(kind)
+                    draft.conditions.conditions.append(condition)
+                    adding = nil
+                    openRow = "condition-\(condition.id)"
+                }
+            })
+        }
+        return items
+    }
+
+    private func conditionBinding(_ condition: Condition) -> Binding<Condition> {
+        Binding(get: { draft.conditions.conditions.first { $0.id == condition.id } ?? condition },
+                set: { new in
+                    if let at = draft.conditions.conditions.firstIndex(where: { $0.id == condition.id }) {
+                        draft.conditions.conditions[at] = new
+                    }
+                })
+    }
+
+    /// What a condition is set to, at its row's end: "“Zoom”", "09:00–17:30".
+    private static func conditionValue(_ kind: Condition.Kind) -> String? {
+        switch kind {
+        case let .windowTitleContains(text): text.isEmpty ? "Not set" : "“\(text)”"
+        case let .timeBetween(start, end): MacsBoredMenu.clock(start) + "–" + MacsBoredMenu.clock(end)
+        default: nil
+        }
+    }
+
+    /// "Safari", or "Safari +2".
+    private static func list(_ words: [String]) -> String {
+        guard let first = words.first else { return "" }
+        return words.count == 1 ? first : "\(first) +\(words.count - 1)"
     }
 
     private static func conditionCount(_ count: Int) -> String {

@@ -139,6 +139,9 @@ final class TabbedMenuModel: ObservableObject {
     /// The height of the page on top of the stack, as last laid out, so the dropdown refits as it
     /// grows and shrinks.
     @Published var subpageHeight: CGFloat = 0
+    /// The whole dropdown's size, as last laid out (at the Size chosen): the panel is fitted to it,
+    /// and anything that changes it refits the panel. Zero until it is first laid out.
+    @Published var contentSize: CGSize = .zero
     /// Runs something that leaves the dropdown for a moment (a file chooser) with the dropdown out of
     /// its way, and brings it back after; set by the controller.
     var stepAway: (() -> Void) -> Void = { $0() }
@@ -205,6 +208,8 @@ public final class TabbedMenuController: NSObject, NSWindowDelegate {
     private var monitors: [Any] = []
     private var resize: AnyCancellable?
     private var pageResize: AnyCancellable?
+    /// Retakes the panel's shadow while the bubble animates (`followShadow`).
+    private var shadowTimer: Timer?
     private var tick: Timer?
 
     /// The gap between the menu bar and the nub's tip, and the least distance from a screen edge.
@@ -267,6 +272,7 @@ public final class TabbedMenuController: NSObject, NSWindowDelegate {
         guard let button, let buttonWindow = button.window else { return }
         model.refresh()
         // The view draws its own bubble; the panel around it is clear, and its shadow follows the bubble.
+        model.contentSize = .zero
         let host = NSHostingView(rootView: ScaledMenuView(model: model))
         let panel = TabbedMenuPanel(contentRect: NSRect(origin: .zero, size: host.fittingSize),
                                     styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
@@ -280,6 +286,9 @@ public final class TabbedMenuController: NSObject, NSWindowDelegate {
         panel.delegate = self
         self.panel = panel
         place(panel, under: buttonWindow.frame, on: buttonWindow.screen)
+        // From here the panel is sized and placed only by `place`. Left to the hosting view, a change
+        // of height would resize it from its bottom edge, moving the bubble.
+        host.sizingOptions = []
         panel.makeKeyAndOrderFront(nil)
         // The button drops its highlight on mouse-up; put it back once that has happened.
         DispatchQueue.main.async { [weak self] in
@@ -293,6 +302,7 @@ public final class TabbedMenuController: NSObject, NSWindowDelegate {
         // under the icon. Read after SwiftUI has laid the change out.
         let pages = Publishers.MergeMany(model.tabs.map(\.changes))
             .merge(with: model.$subpageHeight.removeDuplicates().dropFirst().map { _ in () })
+            .merge(with: model.$contentSize.removeDuplicates().dropFirst().map { _ in () })
         let switches = model.$selected.dropFirst().map { _ in () }
         let banners = model.$banner.dropFirst().map { _ in () }
         let stack = model.$stack.dropFirst().map { [weak self] stack -> Void in
@@ -318,6 +328,8 @@ public final class TabbedMenuController: NSObject, NSWindowDelegate {
         host = nil
         resize = nil
         pageResize = nil
+        shadowTimer?.invalidate()
+        shadowTimer = nil
         // Opened again, the dropdown shows the tool's page, not a page left open over it.
         model.back(to: 0)
         tick?.invalidate()
@@ -330,11 +342,15 @@ public final class TabbedMenuController: NSObject, NSWindowDelegate {
     }
 
     /// Centred under the icon, pulled in from a screen edge when the icon sits close to it; the nub
-    /// still points at the icon.
+    /// still points at the icon. The panel runs from under the icon to the foot of the screen,
+    /// clear below the bubble, so it keeps its place and size as the bubble grows and shrinks inside
+    /// it: the bubble's top never moves. It changes only if the bubble gets wider (the Size chosen)
+    /// or taller than the screen.
     private func place(_ panel: NSPanel, under anchor: NSRect, on screen: NSScreen?) {
         guard let host else { return }
-        // Already at the Size chosen (`ScaledMenuView`).
-        let size = host.fittingSize
+        // Already at the Size chosen (`ScaledMenuView`). As SwiftUI last laid it out; before that
+        // (opening), as the hosting view measures it.
+        let size = model.contentSize == .zero ? host.fittingSize : model.contentSize
         let scale = model.scale
         var x = anchor.midX - size.width / 2
         if let visible = screen?.visibleFrame {
@@ -344,9 +360,30 @@ public final class TabbedMenuController: NSObject, NSWindowDelegate {
         // The nub is drawn in the view's own (unscaled) points.
         let nub = (anchor.midX - x) / scale
         if model.nubX != nub { model.nubX = nub }
-        panel.setFrame(NSRect(x: x, y: anchor.minY - Self.gap - size.height, width: size.width, height: size.height),
-                       display: true)
+        let top = anchor.minY - Self.gap
+        let room = screen.map { top - $0.visibleFrame.minY } ?? size.height
+        let height = max(size.height, room)
+        let frame = NSRect(x: x, y: top - height, width: size.width, height: height)
+        if panel.frame != frame { panel.setFrame(frame, display: true) }
+        followShadow(panel)
+    }
+
+    /// The panel's shadow is taken from what it draws, so it is taken again each frame while the
+    /// bubble animates to its new size.
+    private func followShadow(_ panel: NSPanel) {
+        shadowTimer?.invalidate()
         panel.invalidateShadow()
+        let until = Date().addingTimeInterval(0.4)
+        shadowTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60, repeats: true) { [weak panel] timer in
+            panel?.invalidateShadow()
+            if Date() > until { timer.invalidate() }
+        }
+    }
+
+    /// Whether a click in the panel fell on its clear part, under the bubble.
+    private func isUnderBubble(_ event: NSEvent) -> Bool {
+        guard let panel, event.window === panel, model.contentSize != .zero else { return false }
+        return event.locationInWindow.y < panel.frame.height - model.contentSize.height
     }
 
     private func installMonitors(ignoring buttonWindow: NSWindow) {
@@ -357,7 +394,9 @@ public final class TabbedMenuController: NSObject, NSWindowDelegate {
         }) { monitors.append(global) }
         // One of our own windows. The icon's own click is left to `toggle`.
         if let local = NSEvent.addLocalMonitorForEvents(matching: clicks, handler: { [weak self] event in
-            if let self, !self.away, event.window !== self.panel, event.window !== buttonWindow { self.close() }
+            // The panel's clear part under the bubble counts as outside it.
+            if let self, !self.away, event.window !== buttonWindow,
+               event.window !== self.panel || self.isUnderBubble(event) { self.close() }
             return event
         }) { monitors.append(local) }
         if let keys = NSEvent.addLocalMonitorForEvents(matching: .keyDown, handler: { [weak self] event in
@@ -416,6 +455,14 @@ struct ScaledMenuView: View {
         ScaledLayout(scale: model.scale) {
             TabbedMenuView(model: model).scaleEffect(model.scale, anchor: .topLeading)
         }
+        .background(GeometryReader { proxy in
+            Color.clear.onChange(of: proxy.size, initial: true) { _, size in
+                if model.contentSize != size { model.contentSize = size }
+            }
+        })
+        // Held to the panel's top, under the icon: the panel runs to the foot of the screen, clear
+        // below the bubble.
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 }
 

@@ -783,11 +783,28 @@ struct ConditionRows: View {
                 .buttonStyle(.plain)
                 .help("Remove this condition")
             }
-            parameter(binding)
+            ConditionControls.parameter(binding)
+        }
+    }
+}
+
+/// A condition's settings, in its open row: whether it must be true or must not, and what it checks
+/// for (a window title's text, a span of time).
+struct ConditionControls: View {
+    @Binding var condition: Condition
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Picker("", selection: $condition.negated) {
+                Text("Only if").tag(false)
+                Text("Unless").tag(true)
+            }
+            .pickerStyle(.segmented).controlSize(.small).labelsHidden().fixedSize()
+            Self.parameter($condition)
         }
     }
 
-    @ViewBuilder private func parameter(_ condition: Binding<Condition>) -> some View {
+    @ViewBuilder static func parameter(_ condition: Binding<Condition>) -> some View {
         switch condition.wrappedValue.kind {
         case let .windowTitleContains(text):
             TextField("Text", text: Binding(get: { text }, set: { condition.wrappedValue.kind = .windowTitleContains($0) }))
@@ -804,7 +821,7 @@ struct ConditionRows: View {
         }
     }
 
-    private func timePicker(_ minutes: Int, set: @escaping (Int) -> Void) -> some View {
+    private static func timePicker(_ minutes: Int, set: @escaping (Int) -> Void) -> some View {
         TimeChoice(minutes: minutes, set: set)
     }
 }
