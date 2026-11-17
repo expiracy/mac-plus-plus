@@ -5,10 +5,9 @@ import SwiftUI
 import MacsBoredCore
 
 /// The one editor, for every action, as a page of the dropdown, drawn as the Actions list is: a card
-/// with its name, what it does in a sentence and its On button; then TRIGGERS and STEPS, each a list
-/// of row cards with + Add (a bubble of kinds) on the heading, a row opening in place to its
-/// controls when clicked; then WHERE AND WHEN, folded to a line until opened. Every section folds to
-/// its title. "An app is in front" is passthrough: on its own, with the app's settings in place of
+/// with its name, what it does in a sentence and its On button; then TRIGGERS, STEPS and WHERE AND
+/// WHEN, each a list of row cards with + Add on the heading (its kinds as pills where the new row
+/// will go), a row opening in place to its controls when clicked. Every section folds to its title. "An app is in front" is passthrough: on its own, with the app's settings in place of
 /// steps.
 struct EntryEditor: View {
     @ObservedObject var state: EntryEditorState
@@ -22,18 +21,24 @@ struct EntryEditor: View {
     @State private var recordingKeys = false
     /// The step whose keys are being recorded.
     @State private var recordingStep: UUID?
+    /// The held keys, or the keys in a row, being recorded.
+    @State private var recordingWhen: EntryDraft.When?
     @State private var keysProblem: String?
     @State private var typing = false
     @State private var typed = ""
     @State private var shortcutNames: [String] = []
     /// The row whose controls are open ("when-keys", "step-<id>"); one at a time.
     @State private var openRow: String?
-    @State private var addingTrigger = false
-    @State private var addingStep = false
-    /// Room added at the page's foot while + Add's choices need it, so the dropdown grows to hold them.
-    @State private var addRoom: CGFloat = 0
-    /// The sections folded to their title, by title: where and when starts folded, as the list's do.
-    @State private var folded: Set<String> = ["Where and when"]
+    /// Which section's + Add has its choices showing, if any.
+    @State private var adding: AddingTo?
+    private enum AddingTo {
+        case triggers, steps, limits
+        var section: String { self == .triggers ? "Triggers" : self == .steps ? "Steps" : "Where and when" }
+    }
+    private var addingTrigger: Bool { adding == .triggers }
+    private var addingStep: Bool { adding == .steps }
+    /// The sections folded to their title, by title: all start open.
+    @State private var folded: Set<String> = []
     @Environment(\.stepAway) private var stepAway
 
     /// The action only sends its own keys to the app in front.
@@ -49,27 +54,29 @@ struct EntryEditor: View {
                           summary: Self.conditionCount(draft.conditions.conditions.count)) {
                     ConditionRows(conditions: $state.draft.conditions, empty: "Whenever one of these apps is in front")
                 }
-            } else if draft.when != nil {
+            } else {
+                // All of it from the start, so setting up one part never moves the others.
                 stepsSection
                 whereSection
             }
         }
         .padding(12)
-        .padding(.bottom, addRoom)
-        .onChange(of: addingTrigger || addingStep) { _, open in if !open { addRoom = 0 } }
-        .overlayPreferenceValue(AddAnchorKey.self) { anchors in
-            Color.clear.preference(key: FloatingLayerKey.self, value: addLayer(anchors))
-        }
         .animation(.easeOut(duration: 0.15), value: openRow)
         .task {
             let names = await Task.detached { ActionRunner.shortcutNames() }.value
             shortcutNames = names
+            // The file keeps a preset's ID; show its name as the Windows tool has it now.
+            let presets = ActionRunner.presets()
+            for index in draft.steps.indices {
+                if let id = draft.steps[index].preset?.id, let now = presets.first(where: { $0.id == id }) {
+                    state.draft.steps[index].preset = now
+                }
+            }
         }
     }
 
     private func toggleRow(_ key: String) {
-        addingTrigger = false
-        addingStep = false
+        adding = nil
         openRow = openRow == key ? nil : key
     }
 
@@ -90,7 +97,7 @@ struct EntryEditor: View {
                     .textFieldStyle(.plain)
                     .font(.system(size: 15, weight: .semibold))
                     .help("The action's name: it follows what it does until you type one")
-                Text(draft.sentence ?? "Add a trigger, then what it does.")
+                Text(draft.sentence ?? "Add what starts it and what it does.")
                     .font(.caption).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -106,80 +113,65 @@ struct EntryEditor: View {
 
     private var triggersSection: some View {
         let shut = isFolded("Triggers")
-        let choosing = !shut && draft.whens.isEmpty
         return VStack(alignment: .leading, spacing: CardStyle.rowGap) {
             EditorSectionTitle(title: "Triggers", count: draft.whens.count,
                                trailing: draft.whens.count > 1 ? "Any of these starts it" : nil,
                                summary: draft.whens.map { triggerValue($0) ?? Self.cardTitle($0) }.joined(separator: " · "),
                                folded: shut, toggleFold: { toggleFold("Triggers") },
-                               add: draft.isPassthroughApp ? nil : { startAdding(trigger: true) },
+                               add: draft.isPassthroughApp ? nil : { startAdding(.triggers) },
                                addHelp: "Add a trigger", adding: addingTrigger)
-            if !shut { ForEach(draft.whens, id: \.self) { when in
-                EditorRow(symbol: when.symbol, title: Self.cardTitle(when), value: triggerValue(when),
-                          isOpen: openRow == "when-\(when.rawValue)",
-                          toggle: { toggleRow("when-\(when.rawValue)") },
-                          remove: { draft.remove(when) }, removeHelp: "Remove this trigger") {
-                    triggerControls(when)
-                }
-            } }
-            // With none yet, the choices are the section, in a row of their own.
-            if choosing {
-                EditorRow(symbol: "plus", title: "New trigger", isOpen: true, toggle: {}) {
-                    AddChoices(items: triggerChoices)
+            if !shut {
+                VStack(spacing: CardStyle.rowGap) {
+                    ForEach(draft.whens, id: \.self) { when in
+                        EditorRow(symbol: when.symbol, title: Self.cardTitle(when), value: triggerValue(when),
+                                  isOpen: openRow == "when-\(when.rawValue)",
+                                  toggle: { toggleRow("when-\(when.rawValue)") },
+                                  remove: { draft.remove(when) }, removeHelp: "Remove this trigger") {
+                            triggerControls(when)
+                        }
+                    }
+                    if addingTrigger {
+                        choices(triggerChoices)
+                    } else if draft.whens.isEmpty {
+                        EmptyNote(text: "No triggers yet. Click + Add to add one.")
+                    }
                 }
             }
         }
     }
 
-    private var triggerChoices: [AddChoices.Item] {
+    private var triggerChoices: [AddChoice] {
         EntryDraft.When.allCases
             .filter { !draft.whens.contains($0) && (draft.whens.isEmpty || $0 != .appInFront) }
             .map { when in .init(title: Self.cardTitle(when), symbol: when.symbol) {
                 withAnimation(.easeOut(duration: 0.15)) {
                     draft.add(when)
-                    addingTrigger = false
+                    adding = nil
+                    openRow = "when-\(when.rawValue)"
                 }
             } }
     }
 
-    /// + Add opens its choices in a bubble over the page, as the Actions list's + does; again closes it.
-    private func startAdding(trigger: Bool) {
-        withAnimation(.easeOut(duration: 0.12)) {
-            if trigger { addingTrigger.toggle(); addingStep = false } else { addingStep.toggle(); addingTrigger = false }
+    /// + Add shows its choices at the end of the list, where the new row will go; again hides them.
+    private func startAdding(_ section: AddingTo) {
+        withAnimation(.easeOut(duration: 0.15)) {
+            adding = adding == section ? nil : section
+            if adding != nil { openRow = nil; folded.remove(section.section) }
         }
     }
 
-    /// The open + Add's choices, floating over the whole dropdown under its pill: over it when there
-    /// is room above and not below, and otherwise under it with the page grown to hold them, so none is
-    /// ever cut off. A click anywhere else closes them.
-    private func addLayer(_ anchors: [String: Anchor<CGRect>]) -> FloatingLayer? {
-        let open: (key: String, items: [AddChoices.Item])? =
-            addingTrigger && !draft.whens.isEmpty ? ("Triggers", triggerChoices)
-            : addingStep && !draft.steps.isEmpty ? ("Steps", stepChoices) : nil
-        guard let open, let anchor = anchors[open.key] else { return nil }
-        let close = { startAdding(trigger: addingTrigger) }
-        let room = $addRoom
-        let added = addRoom
-        return FloatingLayer(anchor: anchor) { pill, space in
-            let width = AddMenu.width
-            let x = max(12, min(pill.midX - width + 34, space.width - width - 12))
-            let height = AddMenu.height(open.items.count)
-            // Measured against the dropdown without the room already added, so the room settles.
-            let below = space.height - added - pill.maxY - 4 - 8
-            let up = height > below && pill.minY - 4 - height >= 8
-            let needed = up ? 0 : min(max(0, height - below), height + 20)
-            return AnyView(ZStack(alignment: .topLeading) {
-                Color.clear
-                    .contentShape(Rectangle())
-                    .onTapGesture(perform: close)
-                AddMenu(items: open.items, up: up, nubX: pill.midX - x)
-                    .offset(x: x, y: up ? pill.minY - 4 - height : pill.maxY + 4)
-                    .transition(.scale(scale: 0.85, anchor: up ? .bottomTrailing : .topTrailing).combined(with: .opacity))
-            }
-            .onChange(of: needed, initial: true) { _, needed in
-                if abs(room.wrappedValue - needed) > 0.5 { room.wrappedValue = needed }
-            })
+    /// What + Add shows, where the new trigger or step will go: its kinds as pills, like every other
+    /// choice on the page, on a row card. Choosing one puts it there, open to set.
+    private func choices(_ items: [AddChoice]) -> some View {
+        ChoiceChips(values: items.map(\.title), title: { $0 },
+                    symbol: { title in items.first { $0.title == title }?.symbol }) { title in
+            items.first { $0.title == title }?.action()
         }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .modifier(RowCard())
+        .overlay(RoundedRectangle(cornerRadius: CardStyle.rowCorner, style: .continuous)
+            .strokeBorder(Color.accentColor.opacity(0.45)))
     }
 
     private static func cardTitle(_ when: EntryDraft.When) -> String {
@@ -190,6 +182,9 @@ struct EntryEditor: View {
         case .appInFront: "App in front"
         case .typed: "Typed letters"
         case .time: "Time of day"
+        case .doubleTap: "Double-tap"
+        case .hold: "Hold keys"
+        case .sequence: "Keys in a row"
         }
     }
 
@@ -203,6 +198,9 @@ struct EntryEditor: View {
         case .appInFront: words = draft.apps.map(AppIcons.name)
         case .typed: words = draft.letters.split(whereSeparator: { $0.isWhitespace || $0 == "," }).map(String.init)
         case .time: words = draft.times.map(MacsBoredMenu.clock)
+        case .doubleTap: words = draft.doubleTaps.map { $0.symbol + $0.symbol }
+        case .hold: words = draft.holdKeys.map(\.displayName)
+        case .sequence: words = draft.sequence.count < 2 ? [] : [draft.sequence.map(\.displayName).joined(separator: " ")]
         }
         guard let first = words.first else { return "Not set" }
         return words.count == 1 ? first : "\(first) +\(words.count - 1)"
@@ -242,11 +240,72 @@ struct EntryEditor: View {
                 Label(draft.times.isEmpty ? "Add a Time" : "Add Another Time", systemImage: "plus")
             }
             .buttonStyle(.borderless).foregroundStyle(Color.accentColor)
+        case .doubleTap:
+            ToggleChips(values: ModifierKey.allCases, title: { "\($0.symbol) \(Self.modifierName($0))" },
+                        isOn: { draft.doubleTaps.contains($0) }) { key in
+                if let at = draft.doubleTaps.firstIndex(of: key) { draft.doubleTaps.remove(at: at) }
+                else { draft.doubleTaps.append(key) }
+            }
+            hint("Tap it twice, quickly, on its own. The key still does what it does, so nothing else changes.")
+        case .hold:
+            KeyRecorderField(keys: Binding(get: { nil }, set: { keys in
+                                 guard let keys else { return }
+                                 keysProblem = nil
+                                 if !draft.holdKeys.contains(keys) { draft.holdKeys.append(keys) }
+                             }),
+                             recording: recording(.hold),
+                             onRefused: { keysProblem = $0 },
+                             large: draft.holdKeys,
+                             onClear: { draft.holdKeys = [] },
+                             model: model)
+                .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.primary.opacity(0.04)))
+            problemOr("Hold them a moment to run it. Let go sooner and they do what they always do.")
+        case .sequence:
+            KeyRecorderField(keys: Binding(get: { nil }, set: { keys in
+                                 guard let keys else { return }
+                                 guard !draft.sequence.isEmpty || keys.isUsableAsTrigger else {
+                                     keysProblem = "Start with keys that use ⌘, ⌃ or ⌥ (or an F-key), so typing never starts it."
+                                     return
+                                 }
+                                 keysProblem = nil
+                                 draft.sequence.append(keys)
+                             }),
+                             recording: recording(.sequence),
+                             allowPlain: true,
+                             keepsRecording: true,
+                             large: draft.sequence,
+                             onClear: { draft.sequence = [] },
+                             model: model)
+                .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.primary.opacity(0.04)))
+            problemOr("Press each set of keys in turn, then esc. Run it by pressing them the same way, each within a second and a half.")
         case .appInFront:
             AppChips(apps: $state.draft.apps, suggestions: KnownPassthroughApps.all.filter {
                 NSWorkspace.shared.urlForApplication(withBundleIdentifier: $0.bundleID) != nil
             }, stepAway: stepAway)
             hint("While one of these is in front, it gets your Mac's shortcuts: ⌘⇥, Spotlight, the screenshot keys and the rest.")
+        }
+    }
+
+    private static func modifierName(_ key: ModifierKey) -> String {
+        switch key {
+        case .command: "Cmd"
+        case .option: "Opt"
+        case .control: "Ctrl"
+        case .shift: "Shift"
+        }
+    }
+
+    /// Whether the held keys, or the keys in a row, are being recorded; one recorder at a time.
+    private func recording(_ when: EntryDraft.When) -> Binding<Bool> {
+        Binding(get: { recordingWhen == when }, set: { recordingWhen = $0 ? when : (recordingWhen == when ? nil : recordingWhen) })
+    }
+
+    /// What went wrong with the keys just pressed, or else `text`.
+    @ViewBuilder private func problemOr(_ text: String) -> some View {
+        if let keysProblem {
+            hint(keysProblem, symbol: "exclamationmark.triangle.fill", tint: .orange)
+        } else {
+            hint(text)
         }
     }
 
@@ -397,39 +456,43 @@ struct EntryEditor: View {
 
     private var stepsSection: some View {
         let shut = isFolded("Steps")
-        let choosing = !shut && draft.steps.isEmpty
         return VStack(alignment: .leading, spacing: CardStyle.rowGap) {
             EditorSectionTitle(title: "Steps", count: draft.steps.count,
                                trailing: draft.steps.count > 1 ? "In order" : nil,
                                summary: draft.steps.map { $0.missing == nil ? $0.phrase : Self.title($0.kind) }.joined(separator: " · "),
                                folded: shut, toggleFold: { toggleFold("Steps") },
-                               add: passing ? nil : { startAdding(trigger: false) },
+                               add: passing ? nil : { startAdding(.steps) },
                                addHelp: "Add a step", adding: addingStep)
             if !shut {
-                ForEach(Array(draft.steps.enumerated()), id: \.element.id) { index, step in
-                    stepRow(index: index, step: step)
-                }
-            }
-            if choosing {
-                EditorRow(symbol: "plus", title: "New step", isOpen: true, toggle: {}) {
-                    AddChoices(items: stepChoices)
+                VStack(spacing: CardStyle.rowGap) {
+                    ForEach(Array(draft.steps.enumerated()), id: \.element.id) { index, step in
+                        stepRow(index: index, step: step)
+                    }
+                    if addingStep {
+                        choices(stepChoices)
+                    } else if draft.steps.isEmpty {
+                        EmptyNote(text: "No steps yet. Click + Add to add one.")
+                    }
                 }
             }
         }
     }
 
-    private var stepChoices: [AddChoices.Item] {
+    private var stepChoices: [AddChoice] {
         stepKinds.map { kind in .init(title: Self.title(kind), symbol: kind.symbol) {
             withAnimation(.easeOut(duration: 0.15)) {
-                draft.steps.append(EntryDraft.Step(kind))
-                addingStep = false
+                let step = EntryDraft.Step(kind)
+                draft.steps.append(step)
+                adding = nil
+                openRow = "step-\(step.id)"
             }
         } }
     }
 
     /// The kinds of step, in the order + Add offers them.
     private var stepKinds: [TriggerAction.Kind] {
-        var kinds: [TriggerAction.Kind] = [.openApp, .sendKeys, .typeText, .open, .runShortcut, .wait]
+        var kinds: [TriggerAction.Kind] = [.openApp, .sendKeys, .typeText, .open, .runShortcut, .runScript,
+                                           .moveWindow, .applyPreset, .wait]
         if draft.whens == [.keys] && draft.steps.isEmpty { kinds.append(.passThrough) }
         return kinds
     }
@@ -443,6 +506,9 @@ struct EntryEditor: View {
         case .typeText: "Type text"
         case .wait: "Wait"
         case .passThrough: "Send these keys to the app"
+        case .runScript: "Run a script"
+        case .moveWindow: "Move the window"
+        case .applyPreset: "Arrange windows"
         }
     }
 
@@ -499,20 +565,18 @@ struct EntryEditor: View {
                 Button("Choose…") { chooseFile { step.wrappedValue.text = $0 } }
             }
         case .runShortcut:
-            HStack(spacing: 8) {
-                if !step.wrappedValue.text.isEmpty {
-                    ChosenChip(title: step.wrappedValue.text, symbol: "square.stack.3d.up")
+            if shortcutNames.isEmpty {
+                hint("No Shortcuts yet. Make one in the Shortcuts app, then it's here.")
+            } else {
+                ScrollView {
+                    ChoiceChips(values: shortcutChoices(step.wrappedValue.text), title: { $0 },
+                                isChosen: { $0 == step.wrappedValue.text }) { step.wrappedValue.text = $0 }
                 }
-                LinkMenu(title: step.wrappedValue.text.isEmpty ? "Choose a Shortcut" : "Change") {
-                    ForEach(shortcutChoices(step.wrappedValue.text), id: \.self) { name in
-                        Button(name) { step.wrappedValue.text = name }
-                    }
-                    if shortcutNames.isEmpty { Text("No Shortcuts yet") }
-                    Divider()
-                    Button("Open Shortcuts") { NSWorkspace.shared.open(URL(fileURLWithPath: "/System/Applications/Shortcuts.app")) }
-                }
-                Spacer(minLength: 0)
+                .frame(maxHeight: 128)
+                .fixedSize(horizontal: false, vertical: true)
             }
+            Button("Open Shortcuts") { NSWorkspace.shared.open(URL(fileURLWithPath: "/System/Applications/Shortcuts.app")) }
+                .buttonStyle(.borderless).foregroundStyle(Color.accentColor)
         case .typeText:
             TextField("Text to type", text: step.text, axis: .vertical)
                 .textFieldStyle(.roundedBorder).lineLimit(1...4).frame(maxWidth: .infinity)
@@ -535,25 +599,62 @@ struct EntryEditor: View {
             }
         case .passThrough:
             hint("The keys above go straight to the app in front, ahead of macOS and other apps' shortcuts.")
+        case .runScript:
+            Picker("Language", selection: step.language) {
+                ForEach(Script.Language.allCases, id: \.self) { Text($0.title).tag($0) }
+            }
+            .pickerStyle(.segmented).controlSize(.small).labelsHidden().fixedSize()
+            TextField(step.wrappedValue.language == .shell ? "say \"Hello\"" : "display notification \"Hello\"",
+                      text: step.text, axis: .vertical)
+                .textFieldStyle(.roundedBorder)
+                .font(.system(.callout, design: .monospaced))
+                .lineLimit(2...8)
+                .frame(maxWidth: .infinity)
+            hint(step.wrappedValue.language == .shell
+                 ? "Runs in zsh, as Terminal would. The next step waits for it to finish."
+                 : "macOS may ask once to let mac++ control the app it talks to. The next step waits for it to finish.")
+        case .moveWindow:
+            VStack(alignment: .leading, spacing: 6) {
+                ForEach(Self.placeGroups, id: \.self) { group in
+                    ChoiceChips(values: group, title: \.title, isChosen: { $0 == step.wrappedValue.place }) {
+                        step.wrappedValue.place = $0
+                    }
+                }
+            }
+            hint("The window you're in, on the screen it's on.")
+        case .applyPreset:
+            let presets = ActionRunner.presets()
+            if presets.isEmpty {
+                hint("No presets yet. Make one in the Windows tab, then it's here.")
+            } else {
+                ChoiceChips(values: presets.map(\.id), title: { id in presets.first { $0.id == id }?.name ?? id },
+                            symbol: { _ in TriggerAction.Kind.applyPreset.symbol },
+                            isChosen: { $0 == step.wrappedValue.preset?.id }) { id in
+                    step.wrappedValue.preset = presets.first { $0.id == id }
+                }
+            }
+            hint("Opens and places the preset's apps, as the Windows tab does.")
         }
     }
+
+    /// Where a window can go, grouped as the Change menu lists them.
+    private static let placeGroups: [[WindowPlace]] = [
+        [.maximize],
+        [.leftHalf, .rightHalf, .topHalf, .bottomHalf],
+        [.topLeftQuarter, .topRightQuarter, .bottomLeftQuarter, .bottomRightQuarter],
+        [.leftThird, .centerThird, .rightThird, .leftTwoThirds, .rightTwoThirds],
+    ]
 
     private func shortcutChoices(_ chosen: String) -> [String] {
         chosen.isEmpty || shortcutNames.contains(chosen) ? shortcutNames : [chosen] + shortcutNames
     }
 
-    /// The app chosen, as a chip, and a menu to choose or change it.
+    /// The apps open now, to pick with a click, the chosen one filled; or any other app.
     private func appChoice(_ app: Binding<AppRef?>) -> some View {
-        HStack(spacing: 8) {
-            if let chosen = app.wrappedValue {
-                ChosenChip(title: AppIcons.name(chosen), icon: AppIcons.icon(bundleID: chosen.bundleID))
-            }
-            LinkMenu(title: app.wrappedValue == nil ? "Choose an App" : "Change") {
-                Section("Open now") { ForEach(runningApps) { running in Button(running.name) { app.wrappedValue = running } } }
-                Divider()
-                Button("Choose an app…") { stepAway { AppChooser.choose { app.wrappedValue = $0 } } }
-            }
-        }
+        let chosen = app.wrappedValue
+        let open = runningApps
+        let shown = chosen.map { picked in open.contains(picked) ? open : [picked] + open } ?? open
+        return AppSuggestions(title: "Open now", apps: shown, chosen: chosen, stepAway: stepAway) { app.wrappedValue = $0 }
     }
 
     private func chooseFile(_ picked: @escaping (String) -> Void) {
@@ -570,39 +671,115 @@ struct EntryEditor: View {
 
     // MARK: - Where (triggers) and the passthrough app
 
-    /// Where it works (for what happens in an app: keys, clicks, typing) and when: folded to its
-    /// heading and a summary ("Everywhere · always") until opened.
+    /// Where it works (for what happens in an app: keys, clicks, typing) and when, as a list like
+    /// the others: none means everywhere, always. + Add offers "Only in some apps" and each kind of
+    /// condition; each is a row that opens in place, with its bin.
     private var whereSection: some View {
         let inApps = draft.whens.contains { [.keys, .mouseButton, .typed].contains($0) }
-        let place = inApps && draft.onlyInApps
+        let limitsApps = inApps && draft.onlyInApps
+        let conditions = draft.conditions.conditions
+        let place = limitsApps
             ? (draft.apps.isEmpty ? "In apps you choose" : "Only in " + draft.apps.map(AppIcons.name).joined(separator: ", "))
             : "Everywhere"
-        let count = draft.conditions.conditions.count
-        let summary = place + " · " + Self.conditionCount(count).lowercased()
+        let summary = place + " · " + Self.conditionCount(conditions.count).lowercased()
+        let shut = isFolded("Where and when")
         return VStack(alignment: .leading, spacing: CardStyle.rowGap) {
-            EditorSectionTitle(title: "Where and when", summary: summary,
-                               folded: isFolded("Where and when"), toggleFold: { toggleFold("Where and when") })
-            if !isFolded("Where and when") {
-                FormGroup {
-                    if inApps {
-                        FormRow(label: "Works", divider: false) {
-                            Picker("Works", selection: $state.draft.onlyInApps) {
-                                Text("Everywhere").tag(false)
-                                Text("Only in some apps").tag(true)
+            EditorSectionTitle(title: "Where and when", count: conditions.count + (limitsApps ? 1 : 0),
+                               summary: summary, folded: shut, toggleFold: { toggleFold("Where and when") },
+                               add: { startAdding(.limits) }, addHelp: "Limit where or when it works",
+                               adding: adding == .limits)
+            if !shut {
+                VStack(spacing: CardStyle.rowGap) {
+                    if limitsApps {
+                        EditorRow(symbol: "app.badge.checkmark", title: "Only in some apps",
+                                  value: draft.apps.isEmpty ? "Not set" : Self.list(draft.apps.map(AppIcons.name)),
+                                  isOpen: openRow == "where-apps", toggle: { toggleRow("where-apps") },
+                                  remove: { draft.onlyInApps = false; draft.apps = [] }, removeHelp: "Remove this limit") {
+                            AppChips(apps: $state.draft.apps, suggestions: runningApps, suggestionsTitle: "Open now", stepAway: stepAway)
+                        }
+                    }
+                    ForEach(conditions) { condition in
+                        EditorRow(symbol: condition.kind.symbol,
+                                  title: (condition.negated ? "Unless " : "Only if ") + condition.kind.title.lowercased(),
+                                  value: Self.conditionValue(condition.kind),
+                                  isOpen: openRow == "condition-\(condition.id)",
+                                  toggle: { toggleRow("condition-\(condition.id)") },
+                                  remove: { draft.conditions.conditions.removeAll { $0.id == condition.id } },
+                                  removeHelp: "Remove this condition") {
+                            ConditionControls(condition: conditionBinding(condition))
+                        }
+                    }
+                    if conditions.count > 1 {
+                        HStack(spacing: 8) {
+                            Text("Works when").font(.callout).foregroundStyle(.secondary)
+                            Picker("Works when", selection: $state.draft.conditions.match) {
+                                Text("All are true").tag(ConditionMatch.all)
+                                Text("Any is true").tag(ConditionMatch.any)
                             }
                             .pickerStyle(.segmented).controlSize(.small).labelsHidden().fixedSize()
                             Spacer()
                         }
-                        if draft.onlyInApps {
-                            FormRow(label: "Apps", top: true) {
-                                AppChips(apps: $state.draft.apps, suggestions: runningApps, suggestionsTitle: "Open now", stepAway: stepAway)
-                            }
-                        }
+                        .padding(.horizontal, 4)
                     }
-                    ConditionRows(conditions: $state.draft.conditions, label: "When", empty: "Always", dividedFromAbove: inApps)
+                    if adding == .limits {
+                        choices(limitChoices(inApps: inApps))
+                    } else if !limitsApps && conditions.isEmpty {
+                        EmptyNote(text: "Works everywhere, always. Click + Add to limit it.")
+                    }
                 }
             }
         }
+    }
+
+    /// What + Add offers under Where and when: the apps it works in (for keys, clicks and typing),
+    /// then each kind of condition not used yet (a window title can be checked for more than one text).
+    private func limitChoices(inApps: Bool) -> [AddChoice] {
+        var items: [AddChoice] = []
+        if inApps && !draft.onlyInApps {
+            items.append(.init(title: "Only in some apps", symbol: "app.badge.checkmark") {
+                withAnimation(.easeOut(duration: 0.15)) {
+                    draft.onlyInApps = true
+                    adding = nil
+                    openRow = "where-apps"
+                }
+            })
+        }
+        let used = Set(draft.conditions.conditions.map(\.kind.title))
+        for kind in Condition.Kind.templates where !used.contains(kind.title) || kind == .windowTitleContains("") {
+            items.append(.init(title: kind.title, symbol: kind.symbol) {
+                withAnimation(.easeOut(duration: 0.15)) {
+                    let condition = Condition(kind)
+                    draft.conditions.conditions.append(condition)
+                    adding = nil
+                    openRow = "condition-\(condition.id)"
+                }
+            })
+        }
+        return items
+    }
+
+    private func conditionBinding(_ condition: Condition) -> Binding<Condition> {
+        Binding(get: { draft.conditions.conditions.first { $0.id == condition.id } ?? condition },
+                set: { new in
+                    if let at = draft.conditions.conditions.firstIndex(where: { $0.id == condition.id }) {
+                        draft.conditions.conditions[at] = new
+                    }
+                })
+    }
+
+    /// What a condition is set to, at its row's end: "“Zoom”", "09:00–17:30".
+    private static func conditionValue(_ kind: Condition.Kind) -> String? {
+        switch kind {
+        case let .windowTitleContains(text): text.isEmpty ? "Not set" : "“\(text)”"
+        case let .timeBetween(start, end): MacsBoredMenu.clock(start) + "–" + MacsBoredMenu.clock(end)
+        default: nil
+        }
+    }
+
+    /// "Safari", or "Safari +2".
+    private static func list(_ words: [String]) -> String {
+        guard let first = words.first else { return "" }
+        return words.count == 1 ? first : "\(first) +\(words.count - 1)"
     }
 
     private static func conditionCount(_ count: Int) -> String {

@@ -235,7 +235,7 @@ final class MacsBoredModel: ObservableObject {
 
     // MARK: - Entries
 
-    /// The editor on a new action: blank, or one of the ready-made starts.
+    /// The editor on a new action, blank unless a trigger is chosen already.
     func newEntry(_ draft: EntryDraft = EntryDraft()) {
         onEdit(draft)
     }

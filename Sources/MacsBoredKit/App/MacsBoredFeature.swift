@@ -99,6 +99,15 @@ public final class MacsBoredFeature {
     }
 
     /// Open the editor on a new action, its trigger chosen when `when` names one (`--open-editor`).
+    /// Window steps, done by the Windows tool: move the window you're in to a zone by name
+    /// ("leftHalf"), arrange a preset by ID, and the presets to offer, by ID and name.
+    public func connectWindows(move: @escaping (String) -> Void, applyPreset: @escaping (String) -> Void,
+                               presets: @escaping () -> [(id: String, name: String)]) {
+        ActionRunner.moveWindow = { move($0.rawValue) }
+        ActionRunner.applyPreset = applyPreset
+        ActionRunner.presets = { presets().map { PresetRef(id: $0.id, name: $0.name) } }
+    }
+
     public func openEditor(_ when: String?) {
         model.newEntry(when.flatMap(EntryDraft.When.init(rawValue:)).map { EntryDraft(whens: [$0]) } ?? EntryDraft())
     }

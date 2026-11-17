@@ -85,7 +85,8 @@ final class KeyboardTap {
         let phase: KeyEvent.Phase = type == .keyDown ? .down : type == .keyUp ? .up : .flagsChanged
         let keyCode = UInt16(truncatingIfNeeded: event.getIntegerValueField(.keyboardEventKeycode))
         let key = KeyEvent(phase: phase, keyCode: keyCode, modifiers: FlagBits.modifiers(event.flags.rawValue),
-                           isRepeat: event.getIntegerValueField(.keyboardEventAutorepeat) != 0)
+                           isRepeat: event.getIntegerValueField(.keyboardEventAutorepeat) != 0,
+                           time: Double(event.timestamp) / 1_000_000_000)
         let setup = self.setup
         let decision = router.route(key, setup)
         let swapped = setup.plan.isActive && setup.plan.modifierLayout == .swapCommandControl
@@ -116,8 +117,35 @@ final class KeyboardTap {
         case .runTrigger, .togglePause:
             DispatchQueue.main.async { [weak self] in self?.onDecision(decision) }
             return nil
+        case let .runAlongside(id):
+            DispatchQueue.main.async { [weak self] in self?.onDecision(.runTrigger(id)) }
+            return Unmanaged.passUnretained(event)
+        case let .beginHold(code):
+            // Ask again once the keys have been held long enough, on this thread, where the router lives.
+            let timer = CFRunLoopTimerCreateWithHandler(nil, CFAbsoluteTimeGetCurrent() + KeyRouter.holdDelay, 0, 0, 0) {
+                [weak self] _ in
+                guard let self, let id = self.router.holdElapsed(keyCode: code) else { return }
+                DispatchQueue.main.async { [weak self] in self?.onDecision(.runTrigger(id)) }
+            }
+            CFRunLoopAddTimer(CFRunLoopGetCurrent(), timer, .commonModes)
+            return nil
+        case let .replay(code, modifiers):
+            // Let go too soon for the hold: the keys as an ordinary press after all.
+            Self.press(keyCode: code, modifiers: modifiers, swapped: swapped)
+            return nil
         case .swallow:
             return nil
+        }
+    }
+
+    /// Keys pressed and let go, marked as this app's own so the tap lets them by.
+    private static func press(keyCode: UInt16, modifiers: KeyCombo.Modifiers, swapped: Bool) {
+        let source = CGEventSource(stateID: .hidSystemState)
+        for down in [true, false] {
+            guard let event = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: down) else { continue }
+            event.flags = CGEventFlags(rawValue: FlagBits.rewrite(0, to: modifiers, swappedCommandControl: swapped))
+            event.setIntegerValueField(.eventSourceUserData, value: ownEventTag)
+            event.post(tap: .cgSessionEventTap)
         }
     }
 

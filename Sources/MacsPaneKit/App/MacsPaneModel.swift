@@ -221,6 +221,19 @@ final class MacsPaneModel: ObservableObject {
         mover.snap(window.element, to: layout.boxes[box].frame(in: screen.visibleFrame))
     }
 
+    /// Send the window you are in to a part of the screen it is on: another tool's step (MacsBored's
+    /// "Move the window"). Nothing happens when no window has the keyboard.
+    func moveFocusedWindow(to zone: WindowSnapZone) {
+        guard isAuthorized else { requestAccess(); return }
+        guard let window = mover.focusedWindow(), let frame = mover.axFrame(of: window.element) else { return }
+        let appKitFrame = AXCoordinateConverter.flipRect(frame, primaryHeight: WindowControlService.primaryHeight)
+        let screens = NSScreen.screens
+        let screen = WindowScreenCoverage.displayHoldingMost(of: appKitFrame, displays: screens.map(\.frame))
+            .map { screens[$0] } ?? Self.pointerScreen
+        guard let screen else { return }
+        mover.snap(window.element, to: zone.frame(in: screen.visibleFrame))
+    }
+
     /// Take a shortcut away (the menu's Shortcuts list has already asked).
     func removeShortcut(for action: ShortcutAction) {
         store.update { $0.setShortcut(nil, for: action) }

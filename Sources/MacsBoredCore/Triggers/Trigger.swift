@@ -16,6 +16,12 @@ public enum TriggerAction: Hashable, Sendable {
     case typeText(String)
     /// Wait this many seconds before the next step, up to `longestWait`.
     case wait(Double)
+    /// Run a shell script or an AppleScript, and wait for it to finish before the next step.
+    case runScript(Script)
+    /// Move the window you're in to a part of its screen.
+    case moveWindow(WindowPlace)
+    /// Arrange windows as one of the Windows tool's presets does.
+    case applyPreset(PresetRef)
 
     /// The longest a wait can be: an hour.
     public static let longestWait: Double = 3600
@@ -29,12 +35,15 @@ public enum TriggerAction: Hashable, Sendable {
         case .open: .open
         case .typeText: .typeText
         case .wait: .wait
+        case .runScript: .runScript
+        case .moveWindow: .moveWindow
+        case .applyPreset: .applyPreset
         }
     }
 
     /// The action's kind alone, as the editor's tiles and the config file name it.
     public enum Kind: String, CaseIterable, Identifiable, Sendable {
-        case sendKeys, openApp, runShortcut, passThrough, open, typeText, wait
+        case sendKeys, openApp, runShortcut, passThrough, open, typeText, wait, runScript, moveWindow, applyPreset
         public var id: String { rawValue }
 
         public var title: String {
@@ -46,6 +55,9 @@ public enum TriggerAction: Hashable, Sendable {
             case .open: "Open a link or file"
             case .typeText: "Type text"
             case .wait: "Wait"
+            case .runScript: "Run a script"
+            case .moveWindow: "Move the window"
+            case .applyPreset: "Arrange windows"
             }
         }
 
@@ -59,6 +71,9 @@ public enum TriggerAction: Hashable, Sendable {
             case .open: "Opens a link or file"
             case .typeText: "Types text"
             case .wait: "Waits"
+            case .runScript: "Runs a script"
+            case .moveWindow: "Moves the window"
+            case .applyPreset: "Arranges windows"
             }
         }
 
@@ -71,6 +86,9 @@ public enum TriggerAction: Hashable, Sendable {
             case .open: "link"
             case .typeText: "character.cursor.ibeam"
             case .wait: "hourglass"
+            case .runScript: "terminal"
+            case .moveWindow: "rectangle.lefthalf.inset.filled"
+            case .applyPreset: "rectangle.3.group"
             }
         }
 
@@ -84,6 +102,9 @@ public enum TriggerAction: Hashable, Sendable {
             case .open: .open("")
             case .typeText: .typeText("")
             case .wait: .wait(1)
+            case .runScript: .runScript(Script(.shell, ""))
+            case .moveWindow: .moveWindow(.leftHalf)
+            case .applyPreset: .applyPreset(PresetRef(id: "", name: ""))
             }
         }
     }
@@ -98,7 +119,106 @@ public enum TriggerAction: Hashable, Sendable {
         case let .open(target): target.isEmpty ? "Opens a link" : "Opens \(target)"
         case let .typeText(text): text.isEmpty ? "Types text" : "Types “\(text)”"
         case let .wait(seconds): "Waits \(seconds.formatted()) s"
+        case let .runScript(script): script.source.isEmpty ? "Runs a script" : "Runs “\(script.firstLine)”"
+        case let .moveWindow(place): "Moves the window to \(place.title.lowercased())"
+        case let .applyPreset(preset): preset.name.isEmpty ? "Arranges windows" : "Arranges windows as “\(preset.name)”"
         }
+    }
+}
+
+/// A script a step runs: a shell script (zsh) or an AppleScript.
+public struct Script: Hashable, Sendable {
+    public enum Language: String, CaseIterable, Sendable {
+        case shell, appleScript
+
+        public var title: String {
+            switch self {
+            case .shell: "Shell"
+            case .appleScript: "AppleScript"
+            }
+        }
+    }
+
+    public var language: Language
+    public var source: String
+
+    public init(_ language: Language, _ source: String) {
+        self.language = language
+        self.source = source
+    }
+
+    /// Its first line that says anything, for one-line summaries.
+    public var firstLine: String {
+        source.split(separator: "\n").map { $0.trimmingCharacters(in: .whitespaces) }.first { !$0.isEmpty } ?? ""
+    }
+}
+
+/// Where a step moves the window you're in: a part of the screen it's on, as the Windows tool's
+/// snap zones name them.
+public enum WindowPlace: String, CaseIterable, Sendable {
+    case maximize
+    case leftHalf, rightHalf, topHalf, bottomHalf
+    case topLeftQuarter, topRightQuarter, bottomLeftQuarter, bottomRightQuarter
+    case leftThird, centerThird, rightThird
+    case leftTwoThirds, rightTwoThirds
+
+    public var title: String {
+        switch self {
+        case .maximize: "Whole screen"
+        case .leftHalf: "Left half"
+        case .rightHalf: "Right half"
+        case .topHalf: "Top half"
+        case .bottomHalf: "Bottom half"
+        case .topLeftQuarter: "Top-left quarter"
+        case .topRightQuarter: "Top-right quarter"
+        case .bottomLeftQuarter: "Bottom-left quarter"
+        case .bottomRightQuarter: "Bottom-right quarter"
+        case .leftThird: "Left third"
+        case .centerThird: "Middle third"
+        case .rightThird: "Right third"
+        case .leftTwoThirds: "Left two-thirds"
+        case .rightTwoThirds: "Right two-thirds"
+        }
+    }
+}
+
+/// One of the Windows tool's presets: its ID, which the file keeps, and its name as last seen.
+public struct PresetRef: Hashable, Sendable {
+    public var id: String
+    public var name: String
+
+    public init(id: String, name: String) {
+        self.id = id
+        self.name = name
+    }
+}
+
+/// A modifier key on its own, for actions started by tapping it twice.
+public enum ModifierKey: String, CaseIterable, Sendable {
+    case command = "cmd", option = "opt", control = "ctrl", shift
+
+    public var modifiers: KeyCombo.Modifiers {
+        switch self {
+        case .command: .command
+        case .option: .option
+        case .control: .control
+        case .shift: .shift
+        }
+    }
+
+    public var symbol: String {
+        switch self {
+        case .command: "⌘"
+        case .option: "⌥"
+        case .control: "⌃"
+        case .shift: "⇧"
+        }
+    }
+
+    /// The key whose modifiers are exactly these, if one is.
+    public init?(_ modifiers: KeyCombo.Modifiers) {
+        guard let key = Self.allCases.first(where: { $0.modifiers == modifiers }) else { return nil }
+        self = key
     }
 }
 
@@ -114,6 +234,12 @@ public enum TriggerStart: Hashable, Sendable {
     case typed(String)
     /// The clock reaching this time each day, in minutes since midnight.
     case time(Int)
+    /// Tapping this modifier twice, quickly, on its own.
+    case doubleTap(ModifierKey)
+    /// Holding these keys down a moment (`KeyRouter.holdDelay`); let go sooner, they're pressed as usual.
+    case hold(KeyCombo)
+    /// Pressing these keys one after another, each soon after the last (`KeyRouter.sequenceGap`).
+    case sequence([KeyCombo])
 
     public var kind: Kind {
         switch self {
@@ -122,11 +248,14 @@ public enum TriggerStart: Hashable, Sendable {
         case .appOpens: .appOpens
         case .typed: .typed
         case .time: .time
+        case .doubleTap: .doubleTap
+        case .hold: .hold
+        case .sequence: .sequence
         }
     }
 
     public enum Kind: String, CaseIterable, Sendable {
-        case keys, mouseButton, appOpens, typed, time
+        case keys, mouseButton, appOpens, typed, time, doubleTap, hold, sequence
 
         /// As the editor's Trigger menu says it, after "When".
         public var title: String {
@@ -136,6 +265,9 @@ public enum TriggerStart: Hashable, Sendable {
             case .appOpens: "An app opens"
             case .typed: "I type some letters"
             case .time: "It's a set time"
+            case .doubleTap: "I double-tap a modifier"
+            case .hold: "I hold keys down"
+            case .sequence: "I press keys in a row"
             }
         }
 
@@ -146,6 +278,9 @@ public enum TriggerStart: Hashable, Sendable {
             case .appOpens: "macwindow"
             case .typed: "character.cursor.ibeam"
             case .time: "clock"
+            case .doubleTap: "hand.tap"
+            case .hold: "stopwatch"
+            case .sequence: "list.number"
             }
         }
     }
@@ -201,6 +336,21 @@ public struct Trigger: Hashable, Sendable, Identifiable {
     /// Whether pressing `keys` runs this trigger now.
     public func fires(on pressed: KeyCombo, context: AppContext, passthroughActive: Bool) -> Bool {
         starts.contains(.keys) && keys.contains(pressed) && worksHere(context, passthroughActive: passthroughActive)
+    }
+
+    /// Whether tapping `key` twice runs this trigger now.
+    public func fires(onDoubleTap key: ModifierKey, context: AppContext, passthroughActive: Bool) -> Bool {
+        starts.contains(.doubleTap(key)) && worksHere(context, passthroughActive: passthroughActive)
+    }
+
+    /// Whether holding `keys` down runs this trigger now.
+    public func fires(onHolding keys: KeyCombo, context: AppContext, passthroughActive: Bool) -> Bool {
+        starts.contains(.hold(keys)) && worksHere(context, passthroughActive: passthroughActive)
+    }
+
+    /// The keys-in-a-row this trigger starts with.
+    public var sequences: [[KeyCombo]] {
+        starts.compactMap { if case let .sequence(keys) = $0, keys.count > 1 { keys } else { nil } }
     }
 
     /// Whether clicking mouse button `number` runs this trigger now.

@@ -8,12 +8,15 @@ public struct KeyEvent: Equatable, Sendable {
     public var keyCode: UInt16
     public var modifiers: KeyCombo.Modifiers
     public var isRepeat: Bool
+    /// When it happened, in seconds on any steady clock: for double taps and keys in a row.
+    public var time: Double
 
-    public init(phase: Phase, keyCode: UInt16, modifiers: KeyCombo.Modifiers, isRepeat: Bool = false) {
+    public init(phase: Phase, keyCode: UInt16, modifiers: KeyCombo.Modifiers, isRepeat: Bool = false, time: Double = 0) {
         self.phase = phase
         self.keyCode = keyCode
         self.modifiers = modifiers
         self.isRepeat = isRepeat
+        self.time = time
     }
 }
 
@@ -27,6 +30,12 @@ public enum KeyDecision: Equatable, Sendable {
     case forward(pid: Int32, keyCode: UInt16, modifiers: KeyCombo.Modifiers)
     /// Take it and run the trigger.
     case runTrigger(UUID)
+    /// Let it go on, and run the trigger too (a modifier double-tapped: macOS still sees it).
+    case runAlongside(UUID)
+    /// Take it, and ask again in `KeyRouter.holdDelay` (`holdElapsed`) whether it is still held.
+    case beginHold(keyCode: UInt16)
+    /// Keys held for an action but let go too soon: press them after all, down and up.
+    case replay(keyCode: UInt16, modifiers: KeyCombo.Modifiers)
     /// Take it and pause or resume passthrough.
     case togglePause
     /// Take it and do nothing.
@@ -61,6 +70,19 @@ public struct KeyRouter: Sendable {
     private var forwardedUps: [UInt16: (pid: Int32, layout: ModifierLayout)] = [:]
     /// Keys whose key-down ran a trigger or the pause: their key-up (and repeats) go nowhere.
     private var takenUps: Set<UInt16> = []
+    /// Keys being held for an action: which, the action, and whether it has run yet.
+    private var holding: (keyCode: UInt16, modifiers: KeyCombo.Modifiers, trigger: UUID, ran: Bool)?
+    /// A modifier tapped once on its own, and when it was let go; nil until it is let go.
+    private var tapped: (key: ModifierKey, pressedAt: Double, releasedAt: Double?)?
+    /// Keys in a row under way: the triggers still possible, how many keys are in, and the last's time.
+    private var row: (triggers: [UUID], count: Int, at: Double)?
+
+    /// How long keys are held before the action they start runs.
+    public static let holdDelay = 0.4
+    /// The longest between the taps of a double tap, and a tap's own length.
+    public static let doubleTapGap = 0.35
+    /// The longest between keys in a row.
+    public static let sequenceGap = 1.5
 
     public init() {}
 
@@ -72,8 +94,18 @@ public struct KeyRouter: Sendable {
         }
         let held = hyperHeld && event.phase != .flagsChanged ? event.modifiers.union(.hyper) : event.modifiers
 
+        if event.phase == .flagsChanged {
+            if let trigger = doubleTap(event, setup) { return .runAlongside(trigger) }
+        } else if event.phase == .down, !event.isRepeat {
+            tapped = nil   // a modifier tapped with a key is a shortcut, not a tap
+        }
+
         switch event.phase {
         case .up:
+            if let held = holding, held.keyCode == event.keyCode {
+                holding = nil
+                return held.ran ? .swallow : .replay(keyCode: held.keyCode, modifiers: held.modifiers)
+            }
             if let owner = forwardedUps.removeValue(forKey: event.keyCode) {
                 let (code, modifiers) = Self.remap(event.keyCode, held, phase: .up, layout: owner.layout)
                 return .forward(pid: owner.pid, keyCode: code, modifiers: modifiers)
@@ -81,6 +113,9 @@ public struct KeyRouter: Sendable {
             if takenUps.remove(event.keyCode) != nil { return .swallow }
         case .down:
             let keys = KeyCombo(keyCode: event.keyCode, modifiers: held)
+            if let holding, holding.keyCode == event.keyCode, event.isRepeat { return .swallow }
+            if !event.isRepeat { holding = nil }   // another key while holding: neither is a hold
+            if let decision = continueRow(keys, event, setup) { return decision }
             if keys == setup.pauseKeys {
                 takenUps.insert(event.keyCode)
                 return event.isRepeat ? .swallow : .togglePause
@@ -97,10 +132,78 @@ public struct KeyRouter: Sendable {
                 takenUps.insert(event.keyCode)
                 return event.isRepeat ? .swallow : .runTrigger(trigger.id)
             }
+            if !event.isRepeat, let trigger = setup.triggers.first(where: {
+                $0.fires(onHolding: keys, context: setup.context, passthroughActive: setup.plan.isActive)
+            }) {
+                holding = (event.keyCode, held, trigger.id, false)
+                return .beginHold(keyCode: event.keyCode)
+            }
+            if !event.isRepeat, let decision = startRow(keys, event, setup) { return decision }
         case .flagsChanged:
             break
         }
         return passthrough(event, modifiers: held, plan: setup.plan)
+    }
+
+    /// The keys held since `beginHold` still are: the action to run now, once.
+    public mutating func holdElapsed(keyCode: UInt16) -> UUID? {
+        guard let held = holding, held.keyCode == keyCode, !held.ran else { return nil }
+        holding?.ran = true
+        return held.trigger
+    }
+
+    /// A modifier pressed on its own soon after it was tapped once: the trigger it starts. Any other
+    /// change of modifiers starts again.
+    private mutating func doubleTap(_ event: KeyEvent, _ setup: Setup) -> UUID? {
+        let now = event.time
+        guard let key = ModifierKey(event.modifiers) else {
+            if event.modifiers.isEmpty, let tap = tapped, tap.releasedAt == nil, now - tap.pressedAt <= Self.doubleTapGap {
+                tapped?.releasedAt = now   // let go of, quickly: one tap
+            } else {
+                tapped = nil
+            }
+            return nil
+        }
+        if let tap = tapped, tap.key == key, let released = tap.releasedAt, now - released <= Self.doubleTapGap {
+            tapped = nil
+            return setup.triggers.first {
+                $0.fires(onDoubleTap: key, context: setup.context, passthroughActive: setup.plan.isActive)
+            }?.id
+        }
+        tapped = (key, now, nil)
+        return nil
+    }
+
+    /// The first keys of a row: taken, and remembered, when some trigger's row starts with them.
+    private mutating func startRow(_ keys: KeyCombo, _ event: KeyEvent, _ setup: Setup) -> KeyDecision? {
+        let starting = setup.triggers.filter { trigger in
+            trigger.sequences.contains { $0.first == keys }
+                && trigger.worksHere(setup.context, passthroughActive: setup.plan.isActive)
+        }
+        guard !starting.isEmpty else { return nil }
+        row = (starting.map(\.id), 1, event.time)
+        takenUps.insert(event.keyCode)
+        return .swallow
+    }
+
+    /// The next keys of a row under way: taken while some row still fits, its action run when one is
+    /// complete. Other keys, or keys too late, end the row and go on as usual.
+    private mutating func continueRow(_ keys: KeyCombo, _ event: KeyEvent, _ setup: Setup) -> KeyDecision? {
+        guard let current = row, !event.isRepeat else { return nil }
+        row = nil
+        guard event.time - current.at <= Self.sequenceGap else { return nil }
+        let index = current.count
+        let fitting = setup.triggers.filter { trigger in
+            current.triggers.contains(trigger.id)
+                && trigger.sequences.contains { $0.count > index && $0[index] == keys }
+        }
+        guard !fitting.isEmpty else { return nil }
+        takenUps.insert(event.keyCode)
+        if let done = fitting.first(where: { $0.sequences.contains { $0.count == index + 1 && $0[index] == keys } }) {
+            return .runTrigger(done.id)
+        }
+        row = (fitting.map(\.id), index + 1, event.time)
+        return .swallow
     }
 
     /// The front app's passthrough: its modifier layout, and, when it captures every key, the key

@@ -232,6 +232,55 @@ public enum ConfigSchema {
           "exclusiveMinimum": 0,
           "maximum": 3600,
           "description": "Wait this many seconds before the next step."
+        },
+        "runScript": {
+          "oneOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "object",
+              "properties": {
+                "shell": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "appleScript": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "minProperties": 1,
+              "maxProperties": 1,
+              "additionalProperties": false
+            }
+          ],
+          "description": "Run a shell script (zsh), or { appleScript: ... }; the next step waits for it to finish."
+        },
+        "moveWindow": {
+          "enum": [
+            "maximize",
+            "leftHalf",
+            "rightHalf",
+            "topHalf",
+            "bottomHalf",
+            "topLeftQuarter",
+            "topRightQuarter",
+            "bottomLeftQuarter",
+            "bottomRightQuarter",
+            "leftThird",
+            "centerThird",
+            "rightThird",
+            "leftTwoThirds",
+            "rightTwoThirds"
+          ],
+          "description": "Move the window you're in to this part of its screen."
+        },
+        "applyPreset": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Arrange windows as this preset of the Windows tool does, by its ID."
         }
       },
       "additionalProperties": false,
@@ -335,7 +384,7 @@ public enum ConfigSchema {
     },
     "trigger": {
       "type": "object",
-      "description": "An action: what starts it (any of keys, mouseButton, appOpens, typed and at; keys when none is given), then one action or several steps.",
+      "description": "An action: what starts it (any of keys, doubleTap, hold, sequence, mouseButton, appOpens, typed and at; keys when none is given), then one action or several steps.",
       "oneOf": [
         {
           "required": [
@@ -444,6 +493,66 @@ public enum ConfigSchema {
             }
           ],
           "description": "Starts each day at this time, or each in a list, like \"09:00\"."
+        },
+        "doubleTap": {
+          "oneOf": [
+            {
+              "enum": [
+                "cmd",
+                "opt",
+                "ctrl",
+                "shift"
+              ]
+            },
+            {
+              "type": "array",
+              "items": {
+                "enum": [
+                  "cmd",
+                  "opt",
+                  "ctrl",
+                  "shift"
+                ]
+              }
+            }
+          ],
+          "description": "Starts when this modifier, or any in a list, is tapped twice quickly on its own."
+        },
+        "hold": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/keys"
+            },
+            {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/keys"
+              }
+            }
+          ],
+          "description": "Starts when these keys, or any in a list, are held down a moment; let go sooner and they're pressed as usual. Each needs cmd, ctrl or opt (or an F-key)."
+        },
+        "sequence": {
+          "oneOf": [
+            {
+              "type": "array",
+              "minItems": 2,
+              "items": {
+                "$ref": "#/$defs/keys"
+              }
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "array",
+                "minItems": 2,
+                "items": {
+                  "$ref": "#/$defs/keys"
+                }
+              }
+            }
+          ],
+          "description": "Starts when these keys are pressed one after another, each within a second and a half, like [\"ctrl+a\", \"b\"]; several rows are a list of lists. The first needs cmd, ctrl or opt (or an F-key)."
         },
         "action": {
           "$ref": "#/$defs/action"
