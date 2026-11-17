@@ -109,6 +109,21 @@ public final class MacsPaneFeature {
 
     /// Open the box editor on a new preset, to try drawing without the menu (`--open-editor`).
     public func openEditor() { model.newPreset() }
+
+    // MARK: - For MacsBored's window steps
+
+    /// The presets, by ID and name, in the menu's order.
+    public var presets: [(id: String, name: String)] { model.config.presets.map { ($0.id, $0.name) } }
+
+    /// Arrange a preset, as clicking it in the menu does.
+    public func applyPreset(_ id: String) { model.applyPreset(id) }
+
+    /// Send the window you are in to a snap zone, by its name ("leftHalf", "maximize"); unknown names
+    /// do nothing.
+    public func moveFocusedWindow(toZone name: String) {
+        guard let zone = WindowSnapZone(rawValue: name) else { return }
+        model.moveFocusedWindow(to: zone)
+    }
 }
 
 /// What MacsPane's Help page says.

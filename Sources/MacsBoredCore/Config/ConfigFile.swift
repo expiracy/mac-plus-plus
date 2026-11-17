@@ -69,7 +69,7 @@ public enum ConfigFile {
     static let actionNames: [TriggerAction.Kind] = TriggerAction.Kind.allCases
 
     /// The fields that say what sets a trigger off; a trigger has one.
-    static let startNames = ["keys", "mouseButton", "appOpens", "typed", "at"]
+    static let startNames = ["keys", "mouseButton", "appOpens", "typed", "at", "doubleTap", "hold", "sequence"]
 
     static let conditionNames: [(String, Condition.Kind)] = [
         ("fullScreen", .fullScreen), ("fillsScreen", .fillsScreen), ("windowTitleContains", .windowTitleContains("")),
@@ -272,7 +272,9 @@ private struct Reader {
         for name in ConfigFile.startNames {
             guard let field = node[name], !field.isNull else { continue }
             if name == "keys" { starts.append(.keys); continue }
-            for item in field.array ?? [field] {
+            // One row of keys is a list already; several are a list of lists.
+            let items = name == "sequence" && field.array?.first?.array == nil ? [field] : field.array ?? [field]
+            for item in items {
                 if let start = start(name, item) { starts.append(start) } else { failed = true }
             }
         }
@@ -302,6 +304,23 @@ private struct Reader {
                 return nil
             }
             return .time(minutes)
+        case "doubleTap":
+            guard let text = field.string, let key = ModifierKey(rawValue: text.lowercased()) else {
+                error(field, "“doubleTap” is one modifier: " + ConfigFile.listed(ModifierKey.allCases.map(\.rawValue)) + ".")
+                return nil
+            }
+            return .doubleTap(key)
+        case "hold":
+            return keys(field, forTrigger: true).map { .hold($0) }
+        case "sequence":
+            guard let items = field.array, items.count >= 2 else {
+                error(field, "“sequence” is two or more keys in a row, like [\"ctrl+a\", \"b\"].")
+                return nil
+            }
+            // The first needs ⌘, ⌃ or ⌥, so typing never starts a row; the rest can be any key.
+            var combos: [KeyCombo?] = []
+            for (index, item) in items.enumerated() { combos.append(keys(item, forTrigger: index == 0)) }
+            return combos.contains(nil) ? nil : .sequence(combos.compactMap { $0 })
         default:
             return nil
         }
@@ -372,6 +391,32 @@ private struct Reader {
                 return nil
             }
             return .wait(seconds)
+        case .runScript:
+            if let source = value.string {
+                guard !source.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                    error(value, "“runScript” takes the script to run, in quotes."); return nil
+                }
+                return .runScript(Script(.shell, source))
+            }
+            guard let members = value.object, members.count == 1, let member = members.first,
+                  let language = Script.Language(rawValue: member.key), let source = member.node.string,
+                  !source.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                error(value, "“runScript” takes a shell script in quotes, or { \"appleScript\": \"…\" }.")
+                return nil
+            }
+            return .runScript(Script(language, source))
+        case .moveWindow:
+            guard let name = value.string, let place = WindowPlace(rawValue: name) else {
+                error(value, "“moveWindow” is where the window goes: " + ConfigFile.listed(WindowPlace.allCases.map(\.rawValue)) + ".")
+                return nil
+            }
+            return .moveWindow(place)
+        case .applyPreset:
+            guard let id = value.string?.trimmingCharacters(in: .whitespaces), !id.isEmpty else {
+                error(value, "“applyPreset” is a preset's ID from the Windows tool, in quotes.")
+                return nil
+            }
+            return .applyPreset(PresetRef(id: id, name: id))
         }
     }
 
@@ -476,9 +521,14 @@ enum Writer {
         let apps = t.starts.compactMap { if case let .appOpens(app) = $0 { JSONValue.string(app.bundleID) } else { nil } }
         let letters = t.starts.compactMap { if case let .typed(text) = $0 { JSONValue.string(text) } else { nil } }
         let times = t.starts.compactMap { if case let .time(m) = $0 { JSONValue.string(ConfigFile.clock(m)) } else { nil } }
-        for (name, values) in [("mouseButton", buttons), ("appOpens", apps), ("typed", letters), ("at", times)] where !values.isEmpty {
+        let taps = t.starts.compactMap { if case let .doubleTap(key) = $0 { JSONValue.string(key.rawValue) } else { nil } }
+        let holds = t.starts.compactMap { if case let .hold(keys) = $0 { JSONValue.string(keys.text) } else { nil } }
+        let rows = t.starts.compactMap { if case let .sequence(keys) = $0 { JSONValue.array(keys.map { .string($0.text) }) } else { nil } }
+        for (name, values) in [("mouseButton", buttons), ("appOpens", apps), ("typed", letters), ("at", times),
+                               ("doubleTap", taps), ("hold", holds)] where !values.isEmpty {
             members.append((name, one(values)))
         }
+        if !rows.isEmpty { members.append(("sequence", rows.count == 1 ? rows[0] : .array(rows))) }
         if !t.isEnabled { members.append(("enabled", .bool(false))) }
         if t.steps.count == 1 {
             members.append(("action", action(t.steps[0])))
@@ -499,6 +549,10 @@ enum Writer {
         case let .open(target): .string(target)
         case let .typeText(text): .string(text)
         case let .wait(seconds): .number(seconds)
+        case let .runScript(script):
+            script.language == .shell ? .string(script.source) : .object([(script.language.rawValue, .string(script.source))])
+        case let .moveWindow(place): .string(place.rawValue)
+        case let .applyPreset(preset): .string(preset.id)
         }
         return .object([(action.kind.rawValue, value)])
     }
@@ -557,8 +611,9 @@ enum LegacyConfig {
             case "sendShortcut": action = payload.flatMap(keys).map { .sendKeys($0) }
             case "openApp": action = payload.flatMap(app).map { .openApp($0) }
             case "openURL": action = payload?.string.map { .open($0) }
+            case "runShell": action = payload?.string.map { .runScript(Script(.shell, $0)) }
             default:
-                let what = ["runShell": "ran a shell command", "typeText": "typed text", "togglePause": "paused passthrough",
+                let what = ["typeText": "typed text", "togglePause": "paused passthrough",
                             "toggleKeepAwake": "kept the Mac awake"][kind] ?? "did something"
                 issues.append(.init(line: nil, message: "“\(name)” \(what), which MacsBored no longer does, so it was left out.",
                                     isWarning: true))

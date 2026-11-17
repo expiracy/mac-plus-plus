@@ -64,23 +64,13 @@ enum MacsBoredMenu {
 
     // MARK: - The list
 
-    /// Every action, then every passthrough app, with + Add on the title: a bubble of ready-made
-    /// starts, each opening the editor with its trigger and first step chosen, or a blank one.
+    /// Every action, then every passthrough app, with + Add on the title: it opens the editor on a
+    /// blank action, where its triggers and steps are added.
     private static func actions(_ model: MacsBoredModel) -> MenuGroup {
         let rows = model.config.triggers.map { triggerRow($0, model) } + model.config.profiles.map { profileRow($0, model) }
-        let starts: [(String, String, String, EntryDraft)] = [
-            ("Remap a key", "arrow.left.arrow.right", "remap", EntryDraft(whens: [.keys], steps: [.sendKeys])),
-            ("Open an app with keys", "square.grid.2x2", "open-app", EntryDraft(whens: [.keys], steps: [.openApp])),
-            ("Expand a few letters", "character.cursor.ibeam", "letters", EntryDraft(whens: [.typed], steps: [.typeText])),
-            ("Give a mouse button a job", "computermouse", "mouse", EntryDraft(whens: [.mouseButton], steps: [.sendKeys])),
-            ("When an app opens…", "macwindow", "app-opens", EntryDraft(whens: [.appOpens])),
-            ("Send shortcuts to an app", "arrow.right.to.line", "passthrough", EntryDraft(whens: [.appInFront])),
-            ("Start from scratch…", "plus", "blank", EntryDraft()),
-        ]
-        // Each opens the editor page in the dropdown.
-        let add = MenuEntry.submenu("New action", symbol: "plus", key: "new-action", items: starts.map { title, symbol, key, draft in
-            .command(title, symbol: symbol, key: "new-action-\(key)", keepsOpen: true) { [weak model] in model?.newEntry(draft) }
-        })
+        let add = MenuEntry.command("New action", symbol: "plus", key: "new-action", keepsOpen: true) { [weak model] in
+            model?.newEntry(EntryDraft())
+        }
         return MenuGroup(title: "Actions", rows: rows, add: add, empty: "None yet. Add one: when something happens, do a few things.",
                          visibleRows: 6.5)
     }
@@ -136,6 +126,9 @@ enum MacsBoredMenu {
             case let .appOpens(app): labels.append("\(AppIcons.name(app)) opens")
             case let .typed(letters): labels.append(letters)
             case let .time(minutes): labels.append(clock(minutes))
+            case let .doubleTap(key): labels.append("\(key.symbol)\(key.symbol)")
+            case let .hold(keys): labels.append("Hold \(keys.displayName)")
+            case let .sequence(keys): labels.append(keys.map(\.displayName).joined(separator: " "))
             }
         }
         return labels
@@ -153,7 +146,15 @@ enum MacsBoredMenu {
         case let .typeText(text): "Type “\(text.count > 20 ? text.prefix(20) + "…" : text)”"
         case let .wait(seconds): "Wait \(seconds.formatted()) s"
         case .passThrough: "Send the keys to the app"
+        case let .runScript(script): script.firstLine.isEmpty ? "Run a script" : "Run “\(script.firstLine.prefix(20))”"
+        case let .moveWindow(place): "Window to \(place.title.lowercased())"
+        case let .applyPreset(preset): "Arrange “\(presetName(preset))”"
         }
+    }
+
+    /// A preset's name as the Windows tool has it now; the file keeps only its ID.
+    static func presetName(_ preset: PresetRef) -> String {
+        ActionRunner.presets().first { $0.id == preset.id }?.name ?? preset.name
     }
 
     /// The time as the Mac's clock writes it.

@@ -505,11 +505,6 @@ struct TabbedMenuView: View {
         .frame(width: Metric.width)
         .background(SpeechBubbleShape(nubX: model.nubX).fill(Color(nsColor: .windowBackgroundColor)))
         .overlay(SpeechBubbleShape(nubX: model.nubX).stroke(Color.primary.opacity(0.12), lineWidth: 1))
-        .overlayPreferenceValue(FloatingLayerKey.self) { layer in
-            GeometryReader { proxy in
-                if let layer { layer.content(proxy[layer.anchor], proxy.size) }
-            }
-        }
     }
 
     /// The band across the top of the bubble, the tabs over a tool's page or the navigation bar over

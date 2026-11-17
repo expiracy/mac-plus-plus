@@ -123,18 +123,45 @@ struct ToggleChips<Value: Hashable>: View {
     }
 }
 
-/// A menu drawn as the rest of the page draws its links: accent text, a small chevron after it.
-struct LinkMenu<Content: View>: View {
-    let title: String
-    @ViewBuilder var content: Content
+/// Choices laid out in place as pills that wrap, the chosen one filled with the accent: what the page
+/// offers instead of a menu.
+struct ChoiceChips<Value: Hashable>: View {
+    let values: [Value]
+    let title: (Value) -> String
+    var symbol: (Value) -> String? = { _ in nil }
+    var icon: (Value) -> NSImage? = { _ in nil }
+    var isChosen: (Value) -> Bool = { _ in false }
+    let choose: (Value) -> Void
+    @State private var hovered: Value?
 
     var body: some View {
-        Menu { content } label: {
-            Text("\(title) \(Image(systemName: "chevron.down"))")
+        FlowLayout(spacing: 6) {
+            ForEach(values, id: \.self) { value in
+                let chosen = isChosen(value)
+                Button { choose(value) } label: {
+                    HStack(spacing: 5) {
+                        if let image = icon(value) {
+                            Image(nsImage: image).resizable().interpolation(.high).frame(width: 16, height: 16)
+                        } else if let name = symbol(value) {
+                            Image(systemName: name).font(.system(size: 11, weight: .medium))
+                                .foregroundStyle(chosen ? AnyShapeStyle(Color.white) : AnyShapeStyle(Color.accentColor))
+                        }
+                        Text(title(value)).lineLimit(1)
+                    }
+                    .font(.callout.weight(chosen ? .semibold : .regular))
+                    .foregroundStyle(chosen ? Color.white : Color.primary)
+                    .padding(.horizontal, 9)
+                    .frame(height: 26)
+                    .background(RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .fill(chosen ? Color.accentColor : Color.primary.opacity(hovered == value ? 0.11 : 0.06)))
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .onHover { hovered = $0 ? value : (hovered == value ? nil : hovered) }
+                .accessibilityLabel(title(value))
+                .accessibilityAddTraits(chosen ? .isSelected : [])
+            }
         }
-        .menuStyle(.button).buttonStyle(.borderless).menuIndicator(.hidden)
-        .foregroundStyle(Color.accentColor)
-        .fixedSize()
     }
 }
 
@@ -159,63 +186,25 @@ struct ChosenChip: View {
     }
 }
 
-/// A time of day as the page's chips draw choices: the hour and the minute, each a chip that opens
-/// its list, and AM | PM pills where the Mac uses a 12-hour clock.
+/// A time of day, typed or stepped with the arrow keys in the Mac's own time field (12- or 24-hour,
+/// as the Mac is set): no menu.
 struct TimeChoice: View {
     /// Minutes since midnight.
     let minutes: Int
     let set: (Int) -> Void
 
-    private static let twelveHour = DateFormatter.dateFormat(fromTemplate: "j", options: 0, locale: .current)?.contains("a") ?? false
-
-    private var hour: Int { minutes / 60 }
-    private var minute: Int { minutes % 60 }
-
     var body: some View {
-        HStack(spacing: 4) {
-            Menu {
-                ForEach(Self.twelveHour ? Array(1...12) : Array(0...23), id: \.self) { shown in
-                    Button(Self.twelveHour ? "\(shown)" : String(format: "%02d", shown)) { set(hourOf(shown) * 60 + minute) }
-                }
-            } label: { chip(Self.twelveHour ? "\(hour % 12 == 0 ? 12 : hour % 12)" : String(format: "%02d", hour)) }
-                .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize()
-                .accessibilityLabel("Hour")
-            Text(":").font(.system(size: 15, weight: .semibold, design: .rounded)).foregroundStyle(.secondary)
-            Menu {
-                ForEach(Array(Set(Array(stride(from: 0, to: 60, by: 5)) + [minute])).sorted(), id: \.self) { value in
-                    Button(String(format: "%02d", value)) { set(hour * 60 + value) }
-                }
-            } label: { chip(String(format: "%02d", minute)) }
-                .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize()
-                .accessibilityLabel("Minute")
-            if Self.twelveHour {
-                Picker("AM or PM", selection: Binding(get: { hour >= 12 }, set: { pm in
-                    set(((hour % 12) + (pm ? 12 : 0)) * 60 + minute)
-                })) {
-                    Text("AM").tag(false)
-                    Text("PM").tag(true)
-                }
-                .pickerStyle(.segmented).controlSize(.small).labelsHidden().fixedSize()
-                .padding(.leading, 4)
-            }
-        }
+        DatePicker("Time", selection: Binding(get: { Self.date(minutes) }, set: { date in
+            let parts = Calendar.current.dateComponents([.hour, .minute], from: date)
+            set((parts.hour ?? 0) * 60 + (parts.minute ?? 0))
+        }), displayedComponents: .hourAndMinute)
+            .datePickerStyle(.field)
+            .labelsHidden()
+            .fixedSize()
     }
 
-    /// The hour of the day a shown hour means, keeping the morning or afternoon on a 12-hour clock.
-    private func hourOf(_ shown: Int) -> Int {
-        guard Self.twelveHour else { return shown }
-        return (shown % 12) + (hour >= 12 ? 12 : 0)
-    }
-
-    private func chip(_ text: String) -> some View {
-        HStack(spacing: 4) {
-            Text(text).font(.system(size: 14, weight: .medium, design: .rounded)).monospacedDigit()
-            Image(systemName: "chevron.down").font(.system(size: 8, weight: .bold)).foregroundStyle(.secondary)
-        }
-        .padding(.horizontal, 8)
-        .frame(height: 26)
-        .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(Color.primary.opacity(0.06)))
-        .contentShape(Rectangle())
+    private static func date(_ minutes: Int) -> Date {
+        Calendar.current.date(bySettingHour: minutes / 60, minute: minutes % 60, second: 0, of: Date()) ?? Date()
     }
 }
 
@@ -249,7 +238,6 @@ struct EditorSectionTitle: View {
                     if folded { toggleFold() }
                     add()
                 }
-                .anchorPreference(key: AddAnchorKey.self, value: .bounds) { [title: $0] }
             }
         }
         .padding(.horizontal, 4)
@@ -326,92 +314,26 @@ struct EditorRow<Controls: View>: View {
     }
 }
 
-/// What a section with nothing in it yet offers, inside its one row: a tile each, two to a line.
-struct AddChoices: View {
-    struct Item: Identifiable {
-        let title: String
-        let symbol: String
-        let action: () -> Void
-        var id: String { title }
-    }
-
-    let items: [Item]
-    @State private var hovered: String?
+/// An empty list, as the dropdown's lists say it: a line of text on a row card.
+struct EmptyNote: View {
+    let text: String
 
     var body: some View {
-        LazyVGrid(columns: [GridItem(.flexible(), spacing: 6), GridItem(.flexible(), spacing: 6)], spacing: 6) {
-            ForEach(items) { item in
-                Button(action: item.action) {
-                    HStack(spacing: 8) {
-                        IconTile(symbol: item.symbol, size: 22)
-                        Text(item.title).font(.callout).lineLimit(2).multilineTextAlignment(.leading)
-                        Spacer(minLength: 0)
-                    }
-                    .padding(.horizontal, 7)
-                    .frame(height: 36)
-                    .background(RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(Color.primary.opacity(hovered == item.id ? 0.09 : 0.045)))
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .onHover { hovered = $0 ? item.id : (hovered == item.id ? nil : hovered) }
-            }
-        }
+        Text(text)
+            .font(.callout)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .modifier(RowCard(lifted: false))
     }
 }
 
-/// Where each section's + Add sits, by section title, for its choices' bubble to hang from.
-struct AddAnchorKey: PreferenceKey {
-    static var defaultValue: [String: Anchor<CGRect>] = [:]
-    static func reduce(value: inout [String: Anchor<CGRect>], nextValue: () -> [String: Anchor<CGRect>]) {
-        value.merge(nextValue()) { $1 }
-    }
-}
-
-/// + Add's choices in a bubble of the dropdown's own kind, as the Actions list's + draws its own:
-/// a row each, its icon in a tile, its nub pointing at the +.
-struct AddMenu: View {
-    static let width: CGFloat = 230
-    static func height(_ count: Int) -> CGFloat {
-        CGFloat(count) * (CardStyle.rowHeight - 4) + 12 + SpeechBubbleShape.standardNub.height
-    }
-
-    let items: [AddChoices.Item]
-    let up: Bool
-    let nubX: CGFloat
-    @State private var hovered: String?
-
-    var body: some View {
-        VStack(spacing: 0) {
-            ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
-                Button(action: item.action) {
-                    HStack(spacing: 10) {
-                        IconTile(symbol: item.symbol, size: 24)
-                        Text(item.title).lineLimit(1)
-                        Spacer(minLength: 0)
-                    }
-                    .padding(.horizontal, 8)
-                    .frame(height: CardStyle.rowHeight - 4)
-                    .background(RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(Color.primary.opacity(hovered == item.id ? 0.06 : 0)))
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .onHover { hovered = $0 ? item.id : (hovered == item.id ? nil : hovered) }
-                .overlay(alignment: .top) { if index > 0 { Divider().padding(.horizontal, 8) } }
-            }
-        }
-        .padding(6)
-        .padding(up ? .bottom : .top, SpeechBubbleShape.standardNub.height)
-        .frame(width: Self.width)
-        .background(SpeechBubbleShape(nubX: nubX, corner: CardStyle.corner, pointsDown: up)
-            .fill(Color(nsColor: .windowBackgroundColor)))
-        .overlay(SpeechBubbleShape(nubX: nubX, corner: CardStyle.corner, pointsDown: up)
-            .stroke(Color.primary.opacity(0.12), lineWidth: 1))
-        .compositingGroup()
-        .shadow(color: .black.opacity(0.18), radius: 10, y: 4)
-        .accessibilityElement(children: .contain)
-    }
+/// One of the kinds + Add offers: what it's called, its symbol, and what choosing it does.
+struct AddChoice {
+    let title: String
+    let symbol: String
+    let action: () -> Void
 }
 
 /// "+ Add" as the dropdown's section titles draw it: a small pill.
@@ -672,16 +594,20 @@ struct KeyRecorderField: View {
 struct FlowLayout: Layout {
     var spacing: CGFloat = 6
 
+    /// As wide as offered; offered no width, or any (a stack asking how far it could grow), as wide
+    /// as its longest line, so it never reports an endless width.
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        let width = proposal.width ?? 400
-        var x: CGFloat = 0, y: CGFloat = 0, line: CGFloat = 0
+        let offered = proposal.width.flatMap { $0.isFinite ? $0 : nil }
+        let width = offered ?? .greatestFiniteMagnitude
+        var x: CGFloat = 0, y: CGFloat = 0, line: CGFloat = 0, widest: CGFloat = 0
         for view in subviews {
             let size = view.sizeThatFits(.unspecified)
             if x > 0, x + size.width > width { x = 0; y += line + spacing; line = 0 }
             x += size.width + spacing
+            widest = max(widest, x - spacing)
             line = max(line, size.height)
         }
-        return CGSize(width: width, height: y + line)
+        return CGSize(width: offered ?? widest, height: y + line)
     }
 
     func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
@@ -696,7 +622,8 @@ struct FlowLayout: Layout {
     }
 }
 
-/// The apps as chips with a remove button, then a menu to add one.
+/// The apps as chips with a remove button; under them, apps to add with a click, and a way to choose
+/// any other.
 struct AppChips: View {
     @Binding var apps: [AppRef]
     let suggestions: [AppRef]
@@ -705,40 +632,51 @@ struct AppChips: View {
     var stepAway: (() -> Void) -> Void = { $0() }
 
     var body: some View {
-        FlowLayout {
-            ForEach(apps) { app in
-                HStack(spacing: 4) {
-                    if let icon = AppIcons.icon(bundleID: app.bundleID) {
-                        Image(nsImage: icon).resizable().frame(width: 16, height: 16)
+        VStack(alignment: .leading, spacing: 6) {
+            if !apps.isEmpty {
+                FlowLayout {
+                    ForEach(apps) { app in
+                        HStack(spacing: 4) {
+                            if let icon = AppIcons.icon(bundleID: app.bundleID) {
+                                Image(nsImage: icon).resizable().frame(width: 16, height: 16)
+                            }
+                            Text(AppIcons.name(app)).lineLimit(1)
+                            Button { apps.removeAll { $0.id == app.id } } label: {
+                                Image(systemName: "xmark").font(.system(size: 9, weight: .bold)).foregroundStyle(.secondary)
+                                    .frame(width: 16, height: 16).contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("Remove \(AppIcons.name(app))")
+                        }
+                        .padding(.leading, 8).padding(.trailing, 4)
+                        .frame(height: 28)
+                        .background(RoundedRectangle(cornerRadius: 5, style: .continuous).fill(Color.primary.opacity(0.06)))
                     }
-                    Text(AppIcons.name(app)).lineLimit(1)
-                    Button { apps.removeAll { $0.id == app.id } } label: {
-                        Image(systemName: "xmark").font(.system(size: 9, weight: .bold)).foregroundStyle(.secondary)
-                            .frame(width: 16, height: 16).contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Remove \(AppIcons.name(app))")
                 }
-                .padding(.leading, 8).padding(.trailing, 4)
-                .frame(height: 28)
-                .background(RoundedRectangle(cornerRadius: 5, style: .continuous).fill(Color.primary.opacity(0.06)))
             }
-            Menu {
-                let available = suggestions.filter { !apps.contains($0) }
-                if !available.isEmpty {
-                    Section(suggestionsTitle) { ForEach(available) { app in Button(AppIcons.name(app)) { apps.append(app) } } }
-                }
-                Divider()
-                Button("Choose an app…") {
-                    stepAway { AppChooser.choose { app in if !apps.contains(app) { apps.append(app) } } }
-                }
-            } label: {
-                Label("Add App", systemImage: "plus")
+            AppSuggestions(title: suggestionsTitle, apps: suggestions.filter { !apps.contains($0) },
+                           stepAway: stepAway) { app in if !apps.contains(app) { apps.append(app) } }
+        }
+    }
+}
+
+/// Apps to pick with a click, a few at most, then Choose an App… for any other.
+struct AppSuggestions: View {
+    let title: String
+    let apps: [AppRef]
+    var chosen: AppRef? = nil
+    var stepAway: (() -> Void) -> Void = { $0() }
+    let pick: (AppRef) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            if !apps.isEmpty {
+                Text(title).font(.caption).foregroundStyle(.secondary)
+                ChoiceChips(values: Array(apps.prefix(8)), title: AppIcons.name,
+                            icon: { AppIcons.icon(bundleID: $0.bundleID) }, isChosen: { $0 == chosen }, choose: pick)
             }
-            .menuStyle(.button).buttonStyle(.borderless).menuIndicator(.hidden)
-            .foregroundStyle(Color.accentColor)
-            .fixedSize()
-            .frame(height: 28)
+            Button("Choose an App…") { stepAway { AppChooser.choose(pick) } }
+                .buttonStyle(.borderless).foregroundStyle(Color.accentColor)
         }
     }
 }
@@ -747,6 +685,8 @@ struct AppChips: View {
 /// that means (`empty`, "Always") with Add Condition at its end.
 struct ConditionRows: View {
     @Binding var conditions: ConditionSet
+    /// Add Condition's choices are showing, in a row under it.
+    @State private var choosing = false
     /// The empty row's label, when the rows share a card with other rows ("When").
     var label: String? = nil
     var empty: String
@@ -758,15 +698,16 @@ struct ConditionRows: View {
             FormRow(label: label, divider: dividedFromAbove) {
                 Text(empty).foregroundStyle(.secondary).lineLimit(2)
                 Spacer(minLength: 6)
-                addMenu
+                addButton
             }
+            if choosing { choices }
         } else {
             // Each condition reads on its own ("Only if…", "Unless…") and needs the card's width.
             ForEach(Array(conditions.conditions.enumerated()), id: \.element.id) { index, condition in
                 FormRow(divider: index > 0 || dividedFromAbove) { row(index: index, condition: condition) }
             }
             FormRow(divider: true) {
-                addMenu
+                addButton
                 Spacer()
                 if conditions.conditions.count > 1 {
                     Text("Match").font(.caption).foregroundStyle(.secondary)
@@ -777,20 +718,31 @@ struct ConditionRows: View {
                     .pickerStyle(.segmented).controlSize(.small).labelsHidden().fixedSize()
                 }
             }
+            if choosing { choices }
         }
     }
 
-    private var addMenu: some View {
-        Menu {
-            ForEach(Array(Condition.Kind.templates.enumerated()), id: \.offset) { _, kind in
-                Button { conditions.conditions.append(Condition(kind)) } label: { Label(kind.title, systemImage: kind.symbol) }
-            }
-        } label: {
-            Label("Add Condition", systemImage: "plus")
+    /// Opens the kinds of condition in a row under it; again closes them.
+    private var addButton: some View {
+        Button { withAnimation(.easeOut(duration: 0.15)) { choosing.toggle() } } label: {
+            Label(choosing ? "Close" : "Add Condition", systemImage: choosing ? "xmark" : "plus")
         }
-        .menuStyle(.button).buttonStyle(.borderless).menuIndicator(.hidden)
+        .buttonStyle(.borderless)
         .foregroundStyle(Color.accentColor)
         .fixedSize()
+    }
+
+    /// The kinds of condition, in place: one click adds it.
+    private var choices: some View {
+        FormRow(divider: true) {
+            ChoiceChips(values: Array(Condition.Kind.templates.indices), title: { Condition.Kind.templates[$0].title },
+                        symbol: { Condition.Kind.templates[$0].symbol }) { index in
+                withAnimation(.easeOut(duration: 0.15)) {
+                    conditions.conditions.append(Condition(Condition.Kind.templates[index]))
+                    choosing = false
+                }
+            }
+        }
     }
 
     private func row(index: Int, condition: Condition) -> some View {

@@ -8,7 +8,7 @@ import Foundation
 public struct EntryDraft: Equatable, Sendable {
     /// What sets it off, as the editor's Trigger menu offers it.
     public enum When: String, CaseIterable, Sendable {
-        case keys, mouseButton, appOpens, appInFront, typed, time
+        case keys, doubleTap, hold, sequence, mouseButton, appOpens, appInFront, typed, time
 
         public var title: String {
             switch self {
@@ -18,12 +18,18 @@ public struct EntryDraft: Equatable, Sendable {
             case .appInFront: "An app is in front"
             case .typed: "I type some letters"
             case .time: "It's a set time"
+            case .doubleTap: TriggerStart.Kind.doubleTap.title
+            case .hold: TriggerStart.Kind.hold.title
+            case .sequence: TriggerStart.Kind.sequence.title
             }
         }
 
         public var symbol: String {
             switch self {
             case .appInFront: "arrow.right.to.line"
+            case .doubleTap: TriggerStart.Kind.doubleTap.symbol
+            case .hold: TriggerStart.Kind.hold.symbol
+            case .sequence: TriggerStart.Kind.sequence.symbol
             case .keys: TriggerStart.Kind.keys.symbol
             case .mouseButton: TriggerStart.Kind.mouseButton.symbol
             case .appOpens: TriggerStart.Kind.appOpens.symbol
@@ -39,9 +45,12 @@ public struct EntryDraft: Equatable, Sendable {
         public var kind: TriggerAction.Kind
         public var keys: KeyCombo?
         public var app: AppRef?
-        /// The link or file, the Shortcut's name, or the text to type.
+        /// The link or file, the Shortcut's name, the text to type, or the script.
         public var text = ""
         public var seconds = 1.0
+        public var language = Script.Language.shell
+        public var place = WindowPlace.leftHalf
+        public var preset: PresetRef?
 
         public init(_ kind: TriggerAction.Kind) {
             id = UUID()
@@ -56,6 +65,9 @@ public struct EntryDraft: Equatable, Sendable {
             case let .open(target), let .runShortcut(target), let .typeText(target): text = target
             case let .wait(seconds): self.seconds = seconds
             case .passThrough: break
+            case let .runScript(script): text = script.source; language = script.language
+            case let .moveWindow(place): self.place = place
+            case let .applyPreset(preset): self.preset = preset
             }
         }
 
@@ -70,6 +82,10 @@ public struct EntryDraft: Equatable, Sendable {
             case .typeText: return text.isEmpty ? nil : .typeText(text)
             case .wait: return .wait(min(max(seconds, 0.1), TriggerAction.longestWait))
             case .passThrough: return .passThrough
+            case .runScript:
+                return text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : .runScript(Script(language, text))
+            case .moveWindow: return .moveWindow(place)
+            case .applyPreset: return preset.flatMap { $0.id.isEmpty ? nil : .applyPreset($0) }
             }
         }
 
@@ -82,7 +98,9 @@ public struct EntryDraft: Equatable, Sendable {
             case .open: return "Enter a link or file"
             case .runShortcut: return "Choose a Shortcut"
             case .typeText: return "Type the text to type"
-            case .wait, .passThrough: return nil
+            case .runScript: return "Write the script"
+            case .applyPreset: return "Choose a preset"
+            case .wait, .passThrough, .moveWindow: return nil
             }
         }
 
@@ -101,6 +119,11 @@ public struct EntryDraft: Equatable, Sendable {
             case .typeText: return text.isEmpty ? "Type text" : "Type “\(text.prefix(24))”"
             case .wait: return "Wait \(seconds.formatted()) s"
             case .passThrough: return "Pass keys to the app"
+            case .runScript:
+                let line = Script(language, text).firstLine
+                return line.isEmpty ? "Run a script" : "Run “\(line.prefix(24))”"
+            case .moveWindow: return "Move the window to the \(place.title.lowercased())"
+            case .applyPreset: return preset.map { $0.name.isEmpty ? "Arrange windows" : "Arrange windows as “\($0.name)”" } ?? "Arrange windows"
             }
         }
     }
@@ -125,6 +148,12 @@ public struct EntryDraft: Equatable, Sendable {
     public var isEnabled = true
     /// The keys that set it off: one, or several (say, each shortcut a session should get).
     public var keys: [KeyCombo] = []
+    /// Modifiers that start it when tapped twice.
+    public var doubleTaps: [ModifierKey] = []
+    /// Keys that start it when held down a moment.
+    public var holdKeys: [KeyCombo] = []
+    /// Keys in a row that start it; the editor sets up the first (`sequence`), the rest are kept.
+    public var sequences: [[KeyCombo]] = []
     public var mouseButtons: [Int] = []
     public var openingApps: [AppRef] = []
     /// Letters to type, several separated by spaces or commas (";sig ;s").
@@ -146,7 +175,7 @@ public struct EntryDraft: Equatable, Sendable {
 
     public init() {}
 
-    /// A new action starting with these triggers and steps (one of the ready-made starts).
+    /// A new action starting with these triggers and steps.
     public init(whens: [When], steps: [TriggerAction.Kind] = []) {
         whens.forEach { add($0) }
         self.steps = steps.map(Step.init)
@@ -165,6 +194,9 @@ public struct EntryDraft: Equatable, Sendable {
             case let .appOpens(app): kind = .appOpens; openingApps.append(app)
             case let .typed(text): kind = .typed; typed.append(text)
             case let .time(minutes): kind = .time; times.append(minutes)
+            case let .doubleTap(key): kind = .doubleTap; doubleTaps.append(key)
+            case let .hold(combo): kind = .hold; holdKeys.append(combo)
+            case let .sequence(combos): kind = .sequence; sequences.append(combos)
             }
             if !whens.contains(kind) { whens.append(kind) }
         }
@@ -205,6 +237,13 @@ public struct EntryDraft: Equatable, Sendable {
         whens.append(when)
         if when == .mouseButton && mouseButtons.isEmpty { mouseButtons = [4] }
         if when == .time && times.isEmpty { times = [9 * 60] }
+        if when == .doubleTap && doubleTaps.isEmpty { doubleTaps = [.option] }
+    }
+
+    /// The keys in a row being set up: the first of `sequences`.
+    public var sequence: [KeyCombo] {
+        get { sequences.first ?? [] }
+        set { if sequences.isEmpty { sequences = [newValue] } else { sequences[0] = newValue } }
     }
 
     public mutating func remove(_ when: When) {
@@ -254,6 +293,9 @@ public struct EntryDraft: Equatable, Sendable {
             case .appOpens: if openingApps.isEmpty { return "Choose the app" }
             case .typed: if typedLetters == nil { return "Type at least two letters, no spaces" }
             case .time: if times.isEmpty { return "Choose a time" }
+            case .doubleTap: if doubleTaps.isEmpty { return "Choose a modifier to double-tap" }
+            case .hold: if holdKeys.isEmpty { return "Record the keys to hold" }
+            case .sequence: if sequence.count < 2 { return "Record two or more keys in a row" }
             case .appInFront: break
             }
         }
@@ -287,6 +329,9 @@ public struct EntryDraft: Equatable, Sendable {
             case .appOpens: starts += openingApps.map { .appOpens($0) }
             case .typed: guard let typed = typedLetters else { return nil }; starts += typed.map { .typed($0) }
             case .time: starts += times.map { .time($0) }
+            case .doubleTap: starts += doubleTaps.map { .doubleTap($0) }
+            case .hold: starts += holdKeys.map { .hold($0) }
+            case .sequence: starts += sequences.filter { $0.count > 1 }.map { .sequence($0) }
             case .appInFront: return nil
             }
         }
@@ -348,6 +393,11 @@ public struct EntryDraft: Equatable, Sendable {
         case .appOpens: return (openingApps.isEmpty ? "an app" : Self.joined(openingApps.map(\.name), "or")) + " opens"
         case .typed: return "I type " + (typedLetters.map { Self.joined($0, "or") } ?? "some letters")
         case .time: return "it's " + (times.isEmpty ? "a set time" : Self.joined(times.map(ConfigFile.clock), "or"))
+        case .doubleTap:
+            return "I double-tap " + (doubleTaps.isEmpty ? "a modifier" : Self.joined(doubleTaps.map(\.symbol), "or"))
+        case .hold: return "I hold " + (holdKeys.isEmpty ? "keys" : Self.joined(holdKeys.map(\.displayName), "or"))
+        case .sequence:
+            return "I press " + (sequence.count < 2 ? "keys in a row" : sequence.map(\.displayName).joined(separator: " then "))
         case .appInFront: return "an app is in front"
         }
     }

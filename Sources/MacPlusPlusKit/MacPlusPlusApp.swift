@@ -77,6 +77,9 @@ final class MacPlusPlusAppDelegate: NSObject, NSApplicationDelegate {
         installSignalHandlers()
         bored.onPassthroughChange = { [weak self] _ in self?.updateIcon() }
         pane.start()
+        bored.connectWindows(move: { [weak self] in self?.pane.moveFocusedWindow(toZone: $0) },
+                             applyPreset: { [weak self] in self?.pane.applyPreset($0) },
+                             presets: { [weak self] in self?.pane.presets ?? [] })
         bored.start()
         updateIcon()
         // First run, or a tool whose lessons haven't been seen: one onboarding for the whole app.

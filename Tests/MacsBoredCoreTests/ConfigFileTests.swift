@@ -102,7 +102,8 @@ final class ConfigFileTests: XCTestCase {
         XCTAssertEqual(reading.issues.count, 1)
         XCTAssertEqual(reading.issues.first?.line, 23)
         XCTAssertEqual(reading.issues.first?.message,
-                       "“openApps” isn't an action. Use sendKeys, openApp, runShortcut, passThrough, open, typeText or wait.")
+                       "“openApps” isn't an action. Use sendKeys, openApp, runShortcut, passThrough, open, typeText, wait, "
+                       + "runScript, moveWindow or applyPreset.")
     }
 
     func testEachKindOfMistakeIsCaught() {
