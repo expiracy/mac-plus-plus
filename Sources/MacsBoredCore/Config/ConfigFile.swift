@@ -188,14 +188,32 @@ private struct Reader {
         }
         config.hyperKeyEnabled = bool(node, "capsLockAsHyper", default: false)
         config.setupCompleted = bool(node, "setupCompleted", default: false)
+        for item in list(node, "packs") ?? [] {
+            guard let pack = pack(item) else { continue }
+            if config.packs.contains(where: { $0.name.caseInsensitiveCompare(pack.name) == .orderedSame }) {
+                error(item, "There's already a pack named “\(pack.name)”. Each pack needs a name of its own.")
+                continue
+            }
+            config.packs.append(pack)
+        }
         for item in list(node, "passthrough") ?? [] {
             if let profile = profile(item) { config.profiles.append(profile) }
         }
         for item in list(node, "triggers") ?? [] {
             if let trigger = trigger(item) { config.triggers.append(trigger) }
         }
+        // An action naming a pack the list doesn't have still has it: on, and everywhere. A name that
+        // differs only in case is that pack.
+        func listed(_ name: String?) -> String? {
+            guard let name else { return nil }
+            if let pack = config.packs.first(where: { $0.name.caseInsensitiveCompare(name) == .orderedSame }) { return pack.name }
+            config.packs.append(ActionPack(name: name))
+            return name
+        }
+        for index in config.profiles.indices { config.profiles[index].pack = listed(config.profiles[index].pack) }
+        for index in config.triggers.indices { config.triggers[index].pack = listed(config.triggers[index].pack) }
         config.extra = extras(node, known: ["$schema", "enabled", "openAtLogin", "pauseKeys", "capsLockAsHyper",
-                                            "setupCompleted", "passthrough", "triggers"],
+                                            "setupCompleted", "packs", "passthrough", "triggers"],
                               what: "a MacsBored setting")
         return config
     }
@@ -230,7 +248,7 @@ private struct Reader {
                 error(node["modifiers"]!, "“\(text)” isn't a modifier layout. Use asIs or swapCommandControl.")
             }
         }
-        return PassthroughProfile(
+        var profile = PassthroughProfile(
             name: string(node, "name") ?? apps.first?.name ?? "Passthrough",
             isEnabled: bool(node, "enabled", default: true),
             apps: apps,
@@ -238,8 +256,10 @@ private struct Reader {
             systemShortcuts: shortcuts,
             captureAllKeys: bool(node, "sendEveryKey", default: false),
             modifierLayout: layout,
-            extra: extras(node, known: ["name", "enabled", "apps", "shortcuts", "sendEveryKey", "modifiers", "when"],
+            extra: extras(node, known: ["name", "enabled", "apps", "shortcuts", "sendEveryKey", "modifiers", "when", "pack"],
                           what: "a passthrough field"))
+        profile.pack = packName(node)
+        return profile
     }
 
     mutating func trigger(_ node: JSONNode) -> Trigger? {
@@ -253,15 +273,39 @@ private struct Reader {
             }
         }
         guard let starts = starts(node), let steps = steps(node) else { return nil }
-        return Trigger(name: string(node, "name") ?? "Trigger",
-                       isEnabled: bool(node, "enabled", default: true),
-                       keys: combos,
-                       steps: steps,
-                       apps: apps(node),
-                       conditions: conditions(node),
-                       starts: starts,
-                       extra: extras(node, known: Set(["name", "enabled", "action", "steps", "apps", "when"] + ConfigFile.startNames),
-                                     what: "a trigger field"))
+        var trigger = Trigger(name: string(node, "name") ?? "Trigger",
+                              isEnabled: bool(node, "enabled", default: true),
+                              keys: combos,
+                              steps: steps,
+                              apps: apps(node),
+                              conditions: conditions(node),
+                              starts: starts,
+                              extra: extras(node, known: Set(["name", "enabled", "action", "steps", "apps", "when", "pack"]
+                                                                 + ConfigFile.startNames),
+                                            what: "a trigger field"))
+        trigger.pack = packName(node)
+        return trigger
+    }
+
+    /// The pack an action names, if any.
+    mutating func packName(_ node: JSONNode) -> String? {
+        guard let field = node["pack"], !field.isNull else { return nil }
+        guard let name = field.string?.trimmingCharacters(in: .whitespaces), !name.isEmpty else {
+            error(field, "“pack” is the name of a pack, in quotes.")
+            return nil
+        }
+        return name
+    }
+
+    /// A pack: its name, whether it's on, and the apps its actions work in.
+    mutating func pack(_ node: JSONNode) -> ActionPack? {
+        guard node.object != nil else { error(node, "Each pack should be an object in {braces}, with a “name”."); return nil }
+        guard let name = string(node, "name")?.trimmingCharacters(in: .whitespaces), !name.isEmpty else {
+            error(node, "A pack needs a “name”.")
+            return nil
+        }
+        return ActionPack(name: name, isEnabled: bool(node, "enabled", default: true), apps: apps(node),
+                          extra: extras(node, known: ["name", "enabled", "apps"], what: "a pack field"))
     }
 
     /// What sets the trigger off, any of: its keys (what a trigger with none of these has), mouse
@@ -317,9 +361,16 @@ private struct Reader {
                 error(field, "“sequence” is two or more keys in a row, like [\"ctrl+a\", \"b\"].")
                 return nil
             }
-            // The first needs ⌘, ⌃ or ⌥, so typing never starts a row; the rest can be any key.
+            // The first needs ⌘, ⌃ or ⌥ (or is one tapped on its own, "opt"), so typing never starts
+            // a row; the rest can be any key.
             var combos: [KeyCombo?] = []
-            for (index, item) in items.enumerated() { combos.append(keys(item, forTrigger: index == 0)) }
+            for (index, item) in items.enumerated() {
+                if index == 0, let word = item.string, let tap = ModifierKey(word: word) {
+                    combos.append(.tap(tap))
+                } else {
+                    combos.append(keys(item, forTrigger: index == 0))
+                }
+            }
             return combos.contains(nil) ? nil : .sequence(combos.compactMap { $0 })
         default:
             return nil
@@ -417,6 +468,14 @@ private struct Reader {
                 return nil
             }
             return .applyPreset(PresetRef(id: id, name: id))
+        case .chooseMenuItem:
+            let path = value.string.map { MenuPath(text: $0) }
+                ?? value.array.map { MenuPath($0.compactMap { $0.string?.trimmingCharacters(in: .whitespaces) }) }
+            guard let path, path.isComplete, value.array.map({ $0.count == path.titles.count }) ?? true else {
+                error(value, "“chooseMenuItem” is a menu and the item in it, like [\"Format\", \"Column\", \"AutoFit Selection\"] or \"Format > Column > AutoFit Selection\".")
+                return nil
+            }
+            return .chooseMenuItem(path)
         }
     }
 
@@ -494,14 +553,23 @@ enum Writer {
         if let login = config.openAtLogin { members.append(("openAtLogin", .bool(login))) }
         members.append(("pauseKeys", config.pauseKeys.map { .string($0.text) } ?? .null))
         members.append(("capsLockAsHyper", .bool(config.hyperKeyEnabled)))
+        if !config.packs.isEmpty { members.append(("packs", .array(config.packs.map(pack)))) }
         members.append(("passthrough", .array(config.profiles.map(profile))))
         members.append(("triggers", .array(config.triggers.map(trigger))))
         members.append(("setupCompleted", .bool(config.setupCompleted)))
         return .object(members + config.extra.members)
     }
 
+    static func pack(_ p: ActionPack) -> JSONValue {
+        var members: [(String, JSONValue)] = [("name", .string(p.name))]
+        if !p.isEnabled { members.append(("enabled", .bool(false))) }
+        if !p.apps.isEmpty { members.append(("apps", .array(p.apps.map { .string($0.bundleID) }))) }
+        return .object(members + p.extra.members)
+    }
+
     static func profile(_ p: PassthroughProfile) -> JSONValue {
         var members: [(String, JSONValue)] = [("name", .string(p.name))]
+        if let pack = p.pack { members.append(("pack", .string(pack))) }
         if !p.isEnabled { members.append(("enabled", .bool(false))) }
         members.append(("apps", .array(p.apps.map { .string($0.bundleID) })))
         members.append(("shortcuts", .array(SystemShortcutGroup.allCases.filter(p.systemShortcuts.contains).map { .string($0.rawValue) })))
@@ -513,6 +581,7 @@ enum Writer {
 
     static func trigger(_ t: Trigger) -> JSONValue {
         var members: [(String, JSONValue)] = [("name", .string(t.name))]
+        if let pack = t.pack { members.append(("pack", .string(pack))) }
         func one(_ values: [JSONValue]) -> JSONValue { values.count == 1 ? values[0] : .array(values) }
         if t.starts.contains(.keys) || t.starts.isEmpty {
             members.append(("keys", t.keys.isEmpty ? .null : one(t.keys.map { .string($0.text) })))
@@ -523,7 +592,7 @@ enum Writer {
         let times = t.starts.compactMap { if case let .time(m) = $0 { JSONValue.string(ConfigFile.clock(m)) } else { nil } }
         let taps = t.starts.compactMap { if case let .doubleTap(key) = $0 { JSONValue.string(key.rawValue) } else { nil } }
         let holds = t.starts.compactMap { if case let .hold(keys) = $0 { JSONValue.string(keys.text) } else { nil } }
-        let rows = t.starts.compactMap { if case let .sequence(keys) = $0 { JSONValue.array(keys.map { .string($0.text) }) } else { nil } }
+        let rows = t.starts.compactMap { if case let .sequence(keys) = $0 { JSONValue.array(keys.map { .string($0.tappedModifier?.rawValue ?? $0.text) }) } else { nil } }
         for (name, values) in [("mouseButton", buttons), ("appOpens", apps), ("typed", letters), ("at", times),
                                ("doubleTap", taps), ("hold", holds)] where !values.isEmpty {
             members.append((name, one(values)))
@@ -553,6 +622,7 @@ enum Writer {
             script.language == .shell ? .string(script.source) : .object([(script.language.rawValue, .string(script.source))])
         case let .moveWindow(place): .string(place.rawValue)
         case let .applyPreset(preset): .string(preset.id)
+        case let .chooseMenuItem(path): .array(path.titles.map { .string($0) })
         }
         return .object([(action.kind.rawValue, value)])
     }

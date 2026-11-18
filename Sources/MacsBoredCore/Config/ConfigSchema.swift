@@ -39,6 +39,13 @@ public enum ConfigSchema {
       "default": false,
       "description": "Caps Lock holds ctrl+opt+shift+cmd (hyper), for triggers of your own."
     },
+    "packs": {
+      "type": "array",
+      "description": "Actions grouped under a name, in the order the Actions list shows them. An action joins one with “pack”. A pack's switch turns its actions on and off together; its apps limit those of its actions that name no apps of their own.",
+      "items": {
+        "$ref": "#/$defs/pack"
+      }
+    },
     "passthrough": {
       "type": "array",
       "description": "Apps that get macOS's own shortcuts while they're in front: remote desktops and virtual machines. The first entry that fits wins.",
@@ -60,6 +67,31 @@ public enum ConfigSchema {
     }
   },
   "$defs": {
+    "pack": {
+      "type": "object",
+      "required": [
+        "name"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Its name; each pack's is its own."
+        },
+        "enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Off, none of its actions run."
+        },
+        "apps": {
+          "type": "array",
+          "description": "Its actions work only in these apps, by bundle ID; an action naming apps of its own keeps them. Empty or missing: everywhere.",
+          "items": {
+            "$ref": "#/$defs/app"
+          }
+        }
+      }
+    },
     "keys": {
       "type": "string",
       "description": "Keys as text: modifiers then the key, joined by +. Modifiers: ctrl, opt (or alt), shift, cmd, or hyper for all four. Keys: A–Z, 0–9, punctuation, space, tab, return, escape, delete, left, right, up, down, home, end, pageup, pagedown, F1–F20. The menu's symbols (⌃⌥⇧⌘) also work.",
@@ -281,6 +313,23 @@ public enum ConfigSchema {
           "type": "string",
           "minLength": 1,
           "description": "Arrange windows as this preset of the Windows tool does, by its ID."
+        },
+        "chooseMenuItem": {
+          "oneOf": [
+            {
+              "type": "array",
+              "minItems": 2,
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            {
+              "type": "string",
+              "minLength": 1
+            }
+          ],
+          "description": "Choose an item from the app in front's menus, as clicking it would: the menu, any submenus, then the item, like [\"Format\", \"Column\", \"AutoFit Selection\"] or \"Format > Column > AutoFit Selection\". Case, and the dots after an item that opens a window, don't matter."
         }
       },
       "additionalProperties": false,
@@ -311,6 +360,11 @@ public enum ConfigSchema {
         "name": {
           "type": "string",
           "description": "Defaults to the first app's name."
+        },
+        "pack": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The pack it's in, by name. A pack not in “packs” is made for it: on, and everywhere."
         },
         "enabled": {
           "type": "boolean",
@@ -400,6 +454,11 @@ public enum ConfigSchema {
       "properties": {
         "name": {
           "type": "string"
+        },
+        "pack": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The pack it's in, by name. A pack not in “packs” is made for it: on, and everywhere."
         },
         "keys": {
           "oneOf": [
@@ -552,7 +611,7 @@ public enum ConfigSchema {
               }
             }
           ],
-          "description": "Starts when these keys are pressed one after another, each within a second and a half, like [\"ctrl+a\", \"b\"]; several rows are a list of lists. The first needs cmd, ctrl or opt (or an F-key)."
+          "description": "Starts when these keys are pressed one after another, each within a second and a half, like [\"ctrl+a\", \"b\"]; several rows are a list of lists. The first needs cmd, ctrl or opt (or an F-key), or is a modifier tapped on its own: [\"opt\", \"h\", \"o\", \"i\"] starts with a tap of Option."
         },
         "action": {
           "$ref": "#/$defs/action"

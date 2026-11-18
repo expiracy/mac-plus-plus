@@ -39,6 +39,8 @@ public struct MenuGroup: Identifiable {
     public var add: MenuEntry?
     /// How many rows show before the rest scroll (a half row hints at more); nil for the usual.
     public var visibleRows: CGFloat?
+    /// A row dropped on the list outside any pack, by its `dragID`: it leaves its pack.
+    public var dropOut: ((String) -> Void)?
     public var id: String { title }
 
     public init(title: String, rows: [MenuEntry], add: MenuEntry? = nil, actions: [MenuEntry] = [],
@@ -50,6 +52,25 @@ public struct MenuGroup: Identifiable {
         self.empty = empty
         self.move = move
         self.visibleRows = visibleRows
+    }
+}
+
+/// The rows a pack row holds, and how its card shows them. It folds as a section does, kept with the
+/// page's sections under the row's id.
+public struct MenuPack {
+    public var rows: [MenuEntry]
+    /// Quiet words after the pack's name ("in Excel").
+    public var detail: String?
+    /// The line in place of rows when it holds none.
+    public var empty: String
+    /// A row dropped on the card, by its `dragID`: it goes into the pack.
+    public var drop: ((String) -> Void)?
+
+    public init(rows: [MenuEntry], detail: String? = nil, empty: String, drop: ((String) -> Void)? = nil) {
+        self.rows = rows
+        self.detail = detail
+        self.empty = empty
+        self.drop = drop
     }
 }
 
@@ -130,6 +151,11 @@ public struct MenuEntry: Identifiable {
     public var peek: [PeekSection] = []
     /// A command that offers a choice: clicking it opens these as a small menu, and each runs as a row would.
     public var submenu: [MenuEntry] = []
+    /// Set when the row is a pack of rows: drawn as a card holding them, under a line with the row's
+    /// own name, switch and buttons.
+    public var pack: MenuPack?
+    /// Set when the row can be dragged into a pack (or out of one): what a drop hands over.
+    public var dragID: String?
 
     public var id: String { key ?? title }
 

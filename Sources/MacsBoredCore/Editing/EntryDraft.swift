@@ -51,6 +51,7 @@ public struct EntryDraft: Equatable, Sendable {
         public var language = Script.Language.shell
         public var place = WindowPlace.leftHalf
         public var preset: PresetRef?
+        public var menuPath = MenuPath([])
 
         public init(_ kind: TriggerAction.Kind) {
             id = UUID()
@@ -68,6 +69,7 @@ public struct EntryDraft: Equatable, Sendable {
             case let .runScript(script): text = script.source; language = script.language
             case let .moveWindow(place): self.place = place
             case let .applyPreset(preset): self.preset = preset
+            case let .chooseMenuItem(path): menuPath = path
             }
         }
 
@@ -86,6 +88,9 @@ public struct EntryDraft: Equatable, Sendable {
                 return text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : .runScript(Script(language, text))
             case .moveWindow: return .moveWindow(place)
             case .applyPreset: return preset.flatMap { $0.id.isEmpty ? nil : .applyPreset($0) }
+            case .chooseMenuItem:
+                let path = MenuPath(menuPath.titles.map { $0.trimmingCharacters(in: .whitespaces) })
+                return path.isComplete ? .chooseMenuItem(path) : nil
             }
         }
 
@@ -100,6 +105,7 @@ public struct EntryDraft: Equatable, Sendable {
             case .typeText: return "Type the text to type"
             case .runScript: return "Write the script"
             case .applyPreset: return "Choose a preset"
+            case .chooseMenuItem: return "Choose the menu item"
             case .wait, .passThrough, .moveWindow: return nil
             }
         }
@@ -124,6 +130,7 @@ public struct EntryDraft: Equatable, Sendable {
                 return line.isEmpty ? "Run a script" : "Run “\(line.prefix(24))”"
             case .moveWindow: return "Move the window to the \(place.title.lowercased())"
             case .applyPreset: return preset.map { $0.name.isEmpty ? "Arrange windows" : "Arrange windows as “\($0.name)”" } ?? "Arrange windows"
+            case .chooseMenuItem: return menuPath.isComplete ? "Choose \(menuPath.text)" : "Choose a menu item"
             }
         }
     }
@@ -164,6 +171,8 @@ public struct EntryDraft: Equatable, Sendable {
     /// A trigger works only in `apps` (a passthrough app always does).
     public var onlyInApps = false
     public var apps: [AppRef] = []
+    /// The pack it goes in, by name; nil for none.
+    public var pack: String?
     public var conditions = ConditionSet()
     public var systemShortcuts = SystemShortcutGroup.defaultSet
     public var captureAllKeys = false
@@ -206,6 +215,7 @@ public struct EntryDraft: Equatable, Sendable {
         onlyInApps = !trigger.apps.isEmpty
         conditions = trigger.conditions
         triggerExtra = trigger.extra
+        pack = trigger.pack
         if trigger.name != suggestedName { customName = trigger.name }
     }
 
@@ -220,6 +230,7 @@ public struct EntryDraft: Equatable, Sendable {
         captureAllKeys = profile.captureAllKeys
         modifierLayout = profile.modifierLayout
         profileExtra = profile.extra
+        pack = profile.pack
         if profile.name != suggestedName { customName = profile.name }
     }
 
@@ -352,16 +363,20 @@ public struct EntryDraft: Equatable, Sendable {
         guard let starts, !steps.isEmpty else { return nil }
         let actions = steps.compactMap(\.action)
         guard actions.count == steps.count else { return nil }
-        return Trigger(id: triggerID, name: name, isEnabled: isEnabled, keys: whens.contains(.keys) ? keys : [],
-                       steps: actions, apps: onlyInApps ? apps : [], conditions: conditions, starts: starts,
-                       extra: triggerExtra)
+        var trigger = Trigger(id: triggerID, name: name, isEnabled: isEnabled, keys: whens.contains(.keys) ? keys : [],
+                              steps: actions, apps: onlyInApps ? apps : [], conditions: conditions, starts: starts,
+                              extra: triggerExtra)
+        trigger.pack = pack
+        return trigger
     }
 
     public var profile: PassthroughProfile? {
         guard isPassthroughApp, !apps.isEmpty else { return nil }
-        return PassthroughProfile(id: profileID, name: name, isEnabled: isEnabled, apps: apps, conditions: conditions,
-                                  systemShortcuts: systemShortcuts, captureAllKeys: captureAllKeys,
-                                  modifierLayout: modifierLayout, extra: profileExtra)
+        var profile = PassthroughProfile(id: profileID, name: name, isEnabled: isEnabled, apps: apps, conditions: conditions,
+                                         systemShortcuts: systemShortcuts, captureAllKeys: captureAllKeys,
+                                         modifierLayout: modifierLayout, extra: profileExtra)
+        profile.pack = pack
+        return profile
     }
 
     /// The action in a sentence, as far as it's set up: "When I press Hyper W or click button 4,

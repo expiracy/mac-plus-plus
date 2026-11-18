@@ -45,6 +45,7 @@ public struct KeyCombo: Hashable, Sendable {
 
     /// The combination as macOS menus write it: ⌃⌥⇧⌘, then the key. All four read "Hyper".
     public var displayName: String {
+        if let tap = tappedModifier { return tap.symbol }
         if modifiers == .hyper { return "Hyper " + keyName }
         let symbols: [(Modifiers, String)] = [(.control, "⌃"), (.option, "⌥"), (.shift, "⇧"), (.command, "⌘")]
         return symbols.filter { modifiers.contains($0.0) }.map(\.1).joined() + keyName

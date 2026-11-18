@@ -22,9 +22,12 @@ public final class MacsBoredFeature {
     private let model: MacsBoredModel
     /// The entry the editor page opens on next.
     private var editing: EntryDraft?
+    /// The pack whose page opens next.
+    private var editingPack: String?
 
     /// The editor's page of the dropdown.
     static let editorPage = "macsbored-entry"
+    static let packPage = "macsbored-pack"
     /// The names of MacsBored's own pages of the dropdown, for pictures of them.
     public static let pages = [editorPage]
     /// MacsBored's settings page, opened from mac++'s Settings.
@@ -64,6 +67,7 @@ public final class MacsBoredFeature {
             MainActor.assumeIsolated {
                 switch name {
                 case Self.editorPage: self?.editorPage()
+                case Self.packPage: self?.packPage()
                 case Self.settingsPage: model?.settingsPage { tab?.onClose() }
                 default: nil
                 }
@@ -73,6 +77,10 @@ public final class MacsBoredFeature {
         model.onEdit = { [weak self] draft in
             self?.editing = draft
             self?.tab.onOpenPage(Self.editorPage)
+        }
+        model.onEditPack = { [weak self] name in
+            self?.editingPack = name
+            self?.tab.onOpenPage(Self.packPage)
         }
         model.onPlanChange = { [weak self] plan, enabled in self?.onPassthroughChange?(enabled && plan.isActive) }
     }
@@ -110,6 +118,19 @@ public final class MacsBoredFeature {
 
     public func openEditor(_ when: String?) {
         model.newEntry(when.flatMap(EntryDraft.When.init(rawValue:)).map { EntryDraft(whens: [$0]) } ?? EntryDraft())
+    }
+
+    /// A pack's page: its name, switch and apps, changed as they're set.
+    private func packPage() -> TabbedMenuSubpage? {
+        guard let name = editingPack else { return nil }
+        editingPack = nil
+        let model = model
+        let page = PackPageState(name: name)
+        return TabbedMenuSubpage(
+            title: name,
+            content: AnyView(PackEditor(model: model, page: page)),
+            changes: model.objectWillChange.map { _ in () }.eraseToAnyPublisher(),
+            bar: AnyView(PackEditorBar(onDelete: { [weak model] in model?.deletePack(page.name) })))
     }
 
     /// The editor, on the entry asked for (a new action with none), as a page of the dropdown. While one

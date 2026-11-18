@@ -465,6 +465,7 @@ struct KeyCap: View {
 extension KeyCombo {
     /// Each modifier and the key, as keycaps show them.
     var caps: [String] {
+        if let tap = tappedModifier { return [tap.symbol] }
         let symbols: [(Modifiers, String)] = [(.control, "⌃"), (.option, "⌥"), (.shift, "⇧"), (.command, "⌘")]
         return symbols.filter { modifiers.contains($0.0) }.map(\.1) + [keyName]
     }
@@ -481,6 +482,8 @@ struct KeyRecorderField: View {
     var width: CGFloat = FormMetric.field
     /// Keep listening after each set of keys, for adding several in a row; esc or a click stops.
     var keepsRecording = false
+    /// Take a modifier tapped on its own (pressed and let go, no key between) as keys, while this says so.
+    var tapAllowed: () -> Bool = { false }
     var onRefused: (String) -> Void = { _ in }
     /// Drawn large, as New Shortcut's keys are, showing these keys (and clearing them with its x).
     var large: [KeyCombo]? = nil
@@ -488,6 +491,8 @@ struct KeyRecorderField: View {
     let model: MacsBoredModel
     @State private var held: KeyCombo.Modifiers = []
     @State private var monitor: Any?
+    /// A modifier pressed on its own, and when: a tap if it's let go soon, with no key between.
+    @State private var tapping: (key: ModifierKey, at: TimeInterval)?
 
     var body: some View {
         if let large { largeBody(large) } else { fieldBody }
@@ -586,7 +591,21 @@ struct KeyRecorderField: View {
         model.isRecording = true
         monitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .flagsChanged]) { event in
             let modifiers = FlagBits.modifiers(UInt64(event.modifierFlags.rawValue))
-            if event.type == .flagsChanged { held = modifiers; return nil }
+            if event.type == .flagsChanged {
+                if let key = ModifierKey(modifiers), held.isEmpty {
+                    tapping = (key, event.timestamp)
+                } else if modifiers.isEmpty, let tap = tapping, event.timestamp - tap.at <= KeyRouter.doubleTapGap,
+                          tapAllowed() {
+                    keys = .tap(tap.key)
+                    tapping = nil
+                    if !keepsRecording { stop() }
+                } else {
+                    tapping = nil
+                }
+                held = modifiers
+                return nil
+            }
+            tapping = nil
             if event.keyCode == KeyCombo.Code.escape && modifiers.isEmpty { stop(); return nil }
             if event.keyCode == 51 && modifiers.isEmpty { keys = nil; stop(); return nil }
             let combo = KeyCombo(keyCode: event.keyCode, modifiers: modifiers, character: event.charactersIgnoringModifiers)

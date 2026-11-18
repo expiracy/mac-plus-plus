@@ -103,7 +103,7 @@ final class MacsBoredModel: ObservableObject {
     private func reachTime(_ minute: Int) {
         defer { lastMinute = minute }
         guard let last = lastMinute, last != minute, config.isEnabled, !isRecording else { return }
-        for trigger in config.triggers where trigger.fires(from: last, to: minute, context: context) {
+        for trigger in config.runningTriggers where trigger.fires(from: last, to: minute, context: context) {
             ActionRunner.run(trigger.steps)
         }
     }
@@ -111,13 +111,13 @@ final class MacsBoredModel: ObservableObject {
     /// Runs the actions set for this app opening.
     private func appOpened(_ bundleID: String) {
         guard config.isEnabled, !isRecording else { return }
-        for trigger in config.triggers where trigger.fires(onOpening: bundleID, context: context) {
+        for trigger in config.runningTriggers where trigger.fires(onOpening: bundleID, context: context) {
             ActionRunner.run(trigger.steps)
         }
     }
 
     private func recompute() {
-        let profiles = config.isEnabled ? config.profiles : []
+        let profiles = config.isEnabled ? config.runningProfiles : []
         let next = PassthroughPlanner.plan(profiles: profiles, context: context, paused: isPaused || isRecording)
         hotKeys.move(to: next.disabledHotKeys)
         if next != plan {
@@ -131,7 +131,7 @@ final class MacsBoredModel: ObservableObject {
         // Switched off, MacsBored lets every key through: no triggers, no pause keys, no Hyper.
         let off = isRecording || !config.isEnabled
         tap.setup = KeyRouter.Setup(plan: isRecording ? .inactive : plan,
-                                    triggers: off ? [] : config.triggers,
+                                    triggers: off ? [] : config.runningTriggers,
                                     context: context,
                                     pauseKeys: off ? nil : config.pauseKeys,
                                     hyperKeyEnabled: config.isEnabled && config.hyperKeyEnabled && !hyperBlocked)
@@ -297,6 +297,12 @@ final class MacsBoredModel: ObservableObject {
                 profileSlot = config.profiles.firstIndex { $0.id == id }
                 config.profiles.removeAll { $0.id == id }
             }
+            // A pack named in the editor that isn't one yet is made, at the end of the list.
+            let pack: String? = switch result {
+            case let .trigger(trigger): trigger.pack
+            case let .profile(profile): profile.pack
+            }
+            if let pack, config.pack(named: pack) == nil { config.packs.append(ActionPack(name: pack)) }
             switch result {
             case let .trigger(trigger):
                 for index in config.triggers.indices where config.triggers[index].apps == trigger.apps {
@@ -338,6 +344,94 @@ final class MacsBoredModel: ObservableObject {
             config.triggers[index].isEnabled.toggle()
         }
     }
+
+    // MARK: - Packs
+
+    func togglePack(_ name: String) {
+        update { config in
+            guard let index = config.packs.firstIndex(where: { $0.name == name }) else { return }
+            config.packs[index].isEnabled.toggle()
+        }
+    }
+
+    /// A new, empty pack at the top of the list, named "New pack" (or "New pack 2", …); its name.
+    @discardableResult
+    func newPack() -> String {
+        var name = "New pack"
+        var number = 2
+        while config.packs.contains(where: { $0.name.caseInsensitiveCompare(name) == .orderedSame }) {
+            name = "New pack \(number)"
+            number += 1
+        }
+        let made = name
+        update { $0.packs.insert(ActionPack(name: made), at: 0) }
+        return made
+    }
+
+    /// Renames a pack and moves its actions with it; false when the name is empty or another pack's.
+    @discardableResult
+    func renamePack(_ name: String, to new: String) -> Bool {
+        let new = new.trimmingCharacters(in: .whitespaces)
+        guard !new.isEmpty else { return false }
+        guard new == name || !config.packs.contains(where: { $0.name.caseInsensitiveCompare(new) == .orderedSame && $0.name != name })
+        else { return false }
+        update { config in
+            guard let index = config.packs.firstIndex(where: { $0.name == name }) else { return }
+            config.packs[index].name = new
+            for i in config.triggers.indices where config.triggers[i].pack == name { config.triggers[i].pack = new }
+            for i in config.profiles.indices where config.profiles[i].pack == name { config.profiles[i].pack = new }
+        }
+        return true
+    }
+
+    func setPackApps(_ name: String, _ apps: [AppRef]) {
+        update { config in
+            guard let index = config.packs.firstIndex(where: { $0.name == name }) else { return }
+            config.packs[index].apps = apps
+        }
+    }
+
+    /// A row dragged from the Actions list ("trigger-…", "profile-…") into a pack, or out of one (nil).
+    func move(dragged id: String, toPack pack: String?) {
+        let entry: MacsBoredConfig.Entry
+        if id.hasPrefix("trigger-"), let uuid = UUID(uuidString: String(id.dropFirst("trigger-".count))) {
+            entry = .trigger(uuid)
+        } else if id.hasPrefix("profile-"), let uuid = UUID(uuidString: String(id.dropFirst("profile-".count))) {
+            entry = .profile(uuid)
+        } else {
+            return
+        }
+        update { $0.move(entry, toPack: pack) }
+    }
+
+    /// Deletes a pack; its actions stay, on their own.
+    func deletePack(_ name: String) {
+        update { config in
+            config.packs.removeAll { $0.name == name }
+            for i in config.triggers.indices where config.triggers[i].pack == name { config.triggers[i].pack = nil }
+            for i in config.profiles.indices where config.profiles[i].pack == name { config.profiles[i].pack = nil }
+        }
+    }
+
+    /// The pack being named in place, just made from + Add.
+    @Published private(set) var renamingPack: String?
+
+    /// A new pack at the top of the list, its name typed in place.
+    func startNewPack() {
+        renamingPack = newPack()
+    }
+
+    /// The name typed for the pack just made; nil (or a name taken) keeps the one it was made with.
+    func finishNamingPack(_ name: String, to typed: String?) {
+        guard renamingPack == name else { return }
+        renamingPack = nil
+        if let typed { renamePack(name, to: typed) }
+    }
+
+    /// Opens a pack's page: its name, switch and apps.
+    var onEditPack: (String) -> Void = { _ in }
+
+    func editPack(_ name: String) { onEditPack(name) }
 
     // MARK: -
 
