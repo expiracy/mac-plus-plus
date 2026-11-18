@@ -165,8 +165,8 @@ public struct MenuPageView: View {
 
     // MARK: - Bands
 
-    /// The tool's card under the switcher: what it is for ("Windows") with its Help, what it is
-    /// doing under that (or that it is off), and its power button: On in the accent, or Off.
+    /// The tool's line under the switcher, no card: its icon (in the accent while it is on), what it
+    /// is for ("Windows") with its Help, what it is doing (or Off), and its main switch.
     private func header(_ content: MenuPageContent) -> some View {
         let primary = content.primary
         let isOn: Bool? = {
@@ -174,28 +174,29 @@ public struct MenuPageView: View {
             return nil
         }()
         let name = model.brand.feature ?? model.brand.name
-        let line = content.liveFact ?? primary?.title
-        let shape = RoundedRectangle(cornerRadius: Metric.rowCorner, style: .continuous)
-        return HStack(spacing: 10) {
-            VStack(alignment: .leading, spacing: 1) {
-                HStack(spacing: 5) {
-                    Text(name).font(.system(size: 15, weight: .semibold))
-                        .accessibilityAddTraits(.isHeader)
-                    if let openHelp { HelpButton(subject: model.brand.name, action: openHelp) }
-                }
-                if isOn == false {
-                    Text("Off — turn on to use it").font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                } else if let line, line != model.brand.name {
-                    Text(line).font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                }
+        let line = isOn == false ? "Off" : content.liveFact ?? primary?.title
+        return HStack(spacing: 8) {
+            Image(systemName: model.brand.symbol)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(isOn == false ? Color.secondary : Color.accentColor)
+                .accessibilityHidden(true)
+            Text(name).font(.system(size: 13, weight: .semibold))
+                .accessibilityAddTraits(.isHeader)
+            if let openHelp { HelpButton(subject: model.brand.name, action: openHelp) }
+            if let line, line != model.brand.name {
+                Text(line).font(.caption).foregroundStyle(.secondary).lineLimit(1)
             }
             Spacer(minLength: 4)
-            if let primary, let isOn { PowerButton(name: name, isOn: isOn) { model.run(primary) } }
+            if let primary, let isOn {
+                Toggle(name, isOn: Binding(get: { isOn }, set: { _ in model.run(primary) }))
+                    .toggleStyle(.switch)
+                    .controlSize(.small)
+                    .labelsHidden()
+                    .help(isOn ? "Turn \(name) off" : "Turn \(name) on")
+            }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 9)
-        .background(shape.fill(CardStyle.fill))
-        .overlay(shape.strokeBorder(CardStyle.stroke))
+        .padding(.horizontal, 4)
+        .frame(height: 24)
     }
 
     /// What a section's title counts: how many of its switches are on, out of how many ("4/7"), or
@@ -716,42 +717,6 @@ public struct MenuPageView: View {
         case .none:
             EmptyView()
         }
-    }
-}
-
-/// A tool's main switch (or anything's on and off), as a pill: a power mark and On, filled with the accent, while it is on;
-/// grey and Off while it is off.
-public struct PowerButton: View {
-    let name: String
-    let isOn: Bool
-    let action: () -> Void
-    @State private var hovering = false
-
-    public init(name: String, isOn: Bool, action: @escaping () -> Void) {
-        self.name = name
-        self.isOn = isOn
-        self.action = action
-    }
-
-    public var body: some View {
-        Button(action: action) {
-            HStack(spacing: 5) {
-                Image(systemName: "power").font(.system(size: 11, weight: .bold))
-                Text(isOn ? "On" : "Off").font(.system(size: 12, weight: .semibold))
-            }
-            .foregroundStyle(isOn ? Color.white : Color.secondary)
-            .padding(.horizontal, 12)
-            .frame(height: 26)
-            .background(Capsule().fill(isOn ? Color.accentColor.opacity(hovering ? 0.85 : 1)
-                                       : Color.primary.opacity(hovering ? 0.12 : 0.08)))
-            .contentShape(Capsule())
-        }
-        .buttonStyle(.plain)
-        .onHover { hovering = $0 }
-        .help(isOn ? "Turn \(name) off" : "Turn \(name) on")
-        .accessibilityLabel(name)
-        .accessibilityValue(isOn ? "On" : "Off")
-        .accessibilityAddTraits(.isToggle)
     }
 }
 

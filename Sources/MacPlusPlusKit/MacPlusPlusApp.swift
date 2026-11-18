@@ -73,6 +73,7 @@ final class MacPlusPlusAppDelegate: NSObject, NSApplicationDelegate {
         pane = MacsPaneFeature()
         bored = MacsBoredFeature()
         settings = makeSettings()
+        NSApp.mainMenu = Self.editMenu()
         installStatusItem()
         installSignalHandlers()
         bored.onPassthroughChange = { [weak self] _ in self?.updateIcon() }
@@ -89,6 +90,30 @@ final class MacPlusPlusAppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillTerminate(_ notification: Notification) {
         bored?.stop()
         pane?.stop()
+    }
+
+    /// A menu-bar app shows no menus of its own, but its main menu still carries the keyboard's
+    /// shortcuts: without an Edit menu ⌘A, ⌘C, ⌘V, ⌘X and ⌘Z reach no text field (an action's name,
+    /// a window title to match). Never drawn; only its key equivalents count.
+    static func editMenu() -> NSMenu {
+        let edit = NSMenu(title: "Edit")
+        func add(_ title: String, _ action: String, _ key: String, _ flags: NSEvent.ModifierFlags = .command) {
+            let item = NSMenuItem(title: title, action: Selector(action), keyEquivalent: key)
+            item.keyEquivalentModifierMask = flags
+            edit.addItem(item)
+        }
+        add("Undo", "undo:", "z")
+        add("Redo", "redo:", "z", [.command, .shift])
+        add("Cut", "cut:", "x")
+        add("Copy", "copy:", "c")
+        add("Paste", "paste:", "v")
+        add("Select All", "selectAll:", "a")
+        let editItem = NSMenuItem(title: "Edit", action: nil, keyEquivalent: "")
+        editItem.submenu = edit
+        let main = NSMenu(title: "Main")
+        main.addItem(NSMenuItem(title: "mac++", action: nil, keyEquivalent: ""))
+        main.addItem(editItem)
+        return main
     }
 
     // MARK: - The menu bar

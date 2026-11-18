@@ -748,5 +748,13 @@ public struct TabbedMenuPicture: View {
 /// Borderless panels refuse the keyboard by default; this one needs `esc`, ⌘1… and ⌘Q.
 private final class TabbedMenuPanel: NSPanel {
     override var canBecomeKey: Bool { true }
+
+    /// While typing in a field, the app's Edit menu (⌘A, ⌘C, ⌘V, ⌘X, ⌘Z) is asked from here, as the
+    /// panel doesn't make mac++ the active app and so may not be offered its menu's shortcuts.
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        if super.performKeyEquivalent(with: event) { return true }
+        guard firstResponder is NSText else { return false }
+        return NSApp.mainMenu?.performKeyEquivalent(with: event) ?? false
+    }
 }
 #endif
