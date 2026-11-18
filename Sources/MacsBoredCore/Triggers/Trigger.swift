@@ -22,6 +22,9 @@ public enum TriggerAction: Hashable, Sendable {
     case moveWindow(WindowPlace)
     /// Arrange windows as one of the Windows tool's presets does.
     case applyPreset(PresetRef)
+    /// Choose an item from the app in front's menus, as clicking it would: Format › Column ›
+    /// AutoFit Selection.
+    case chooseMenuItem(MenuPath)
 
     /// The longest a wait can be: an hour.
     public static let longestWait: Double = 3600
@@ -38,12 +41,14 @@ public enum TriggerAction: Hashable, Sendable {
         case .runScript: .runScript
         case .moveWindow: .moveWindow
         case .applyPreset: .applyPreset
+        case .chooseMenuItem: .chooseMenuItem
         }
     }
 
     /// The action's kind alone, as the editor's tiles and the config file name it.
     public enum Kind: String, CaseIterable, Identifiable, Sendable {
-        case sendKeys, openApp, runShortcut, passThrough, open, typeText, wait, runScript, moveWindow, applyPreset
+        case sendKeys, openApp, runShortcut, passThrough, open, typeText, wait, runScript, moveWindow, applyPreset,
+             chooseMenuItem
         public var id: String { rawValue }
 
         public var title: String {
@@ -58,6 +63,7 @@ public enum TriggerAction: Hashable, Sendable {
             case .runScript: "Run a script"
             case .moveWindow: "Move the window"
             case .applyPreset: "Arrange windows"
+            case .chooseMenuItem: "Choose a menu item"
             }
         }
 
@@ -74,6 +80,7 @@ public enum TriggerAction: Hashable, Sendable {
             case .runScript: "Runs a script"
             case .moveWindow: "Moves the window"
             case .applyPreset: "Arranges windows"
+            case .chooseMenuItem: "Chooses a menu item"
             }
         }
 
@@ -89,6 +96,7 @@ public enum TriggerAction: Hashable, Sendable {
             case .runScript: "terminal"
             case .moveWindow: "rectangle.lefthalf.inset.filled"
             case .applyPreset: "rectangle.3.group"
+            case .chooseMenuItem: "filemenu.and.selection"
             }
         }
 
@@ -105,6 +113,7 @@ public enum TriggerAction: Hashable, Sendable {
             case .runScript: .runScript(Script(.shell, ""))
             case .moveWindow: .moveWindow(.leftHalf)
             case .applyPreset: .applyPreset(PresetRef(id: "", name: ""))
+            case .chooseMenuItem: .chooseMenuItem(MenuPath([]))
             }
         }
     }
@@ -122,7 +131,46 @@ public enum TriggerAction: Hashable, Sendable {
         case let .runScript(script): script.source.isEmpty ? "Runs a script" : "Runs “\(script.firstLine)”"
         case let .moveWindow(place): "Moves the window to \(place.title.lowercased())"
         case let .applyPreset(preset): preset.name.isEmpty ? "Arranges windows" : "Arranges windows as “\(preset.name)”"
+        case let .chooseMenuItem(path): path.titles.isEmpty ? "Chooses a menu item" : "Chooses " + path.text
         }
+    }
+}
+
+/// A menu item by the titles that lead to it, from the menu bar down: ["Format", "Column",
+/// "AutoFit Selection"].
+public struct MenuPath: Hashable, Sendable {
+    public var titles: [String]
+
+    public init(_ titles: [String]) {
+        self.titles = titles
+    }
+
+    /// From "Format > Column > AutoFit Selection" (› works too).
+    public init(text: String) {
+        titles = text.split(whereSeparator: { $0 == ">" || $0 == "›" })
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+    }
+
+    /// "Format › Column › AutoFit Selection".
+    public var text: String { titles.joined(separator: " › ") }
+
+    /// A menu and an item in it at least, each named.
+    public var isComplete: Bool {
+        titles.count >= 2 && titles.allSatisfy { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+    }
+
+    /// Whether `wanted` names the menu title `actual`: whatever the case, and with or without the
+    /// dots of an item that opens a window ("Paste Special…", "Paste Special...", "Paste Special").
+    public static func matches(_ wanted: String, _ actual: String) -> Bool {
+        let a = plain(wanted), b = plain(actual)
+        return !a.isEmpty && a == b
+    }
+
+    private static func plain(_ title: String) -> String {
+        var text = title.replacingOccurrences(of: "...", with: "…").trimmingCharacters(in: .whitespaces)
+        while text.hasSuffix("…") { text = String(text.dropLast()).trimmingCharacters(in: .whitespaces) }
+        return text.lowercased()
     }
 }
 
@@ -220,6 +268,37 @@ public enum ModifierKey: String, CaseIterable, Sendable {
         guard let key = Self.allCases.first(where: { $0.modifiers == modifiers }) else { return nil }
         self = key
     }
+
+    /// The key a word names on its own, as the config file writes it ("opt", "option", "alt", "⌥").
+    public init?(word: String) {
+        let names: [String: ModifierKey] = ["cmd": .command, "command": .command, "⌘": .command,
+                                            "opt": .option, "option": .option, "alt": .option, "⌥": .option,
+                                            "ctrl": .control, "control": .control, "⌃": .control,
+                                            "shift": .shift, "⇧": .shift]
+        guard let key = names[word.trimmingCharacters(in: .whitespaces).lowercased()] else { return nil }
+        self = key
+    }
+
+    /// Its keys' codes, left then right.
+    public var keyCodes: [UInt16] {
+        switch self {
+        case .command: [55, 54]
+        case .option: [58, 61]
+        case .control: [59, 62]
+        case .shift: [56, 60]
+        }
+    }
+}
+
+extension KeyCombo {
+    /// A modifier tapped on its own, which can start keys in a row (⌥, then H, O, I): its left key,
+    /// with no modifiers.
+    public static func tap(_ key: ModifierKey) -> KeyCombo { KeyCombo(keyCode: key.keyCodes[0], modifiers: []) }
+
+    /// The modifier these keys tap on its own, if that's what they are.
+    public var tappedModifier: ModifierKey? {
+        modifiers.isEmpty ? ModifierKey.allCases.first { $0.keyCodes.contains(keyCode) } : nil
+    }
 }
 
 /// What starts an action.
@@ -305,6 +384,8 @@ public struct Trigger: Hashable, Sendable, Identifiable {
     /// Only in these apps; empty for everywhere.
     public var apps: [AppRef]
     public var conditions: ConditionSet
+    /// The pack it's in, by name; nil for none.
+    public var pack: String?
     /// Fields in the config file MacsBored doesn't know, written back as they were.
     public var extra: JSONFields
 

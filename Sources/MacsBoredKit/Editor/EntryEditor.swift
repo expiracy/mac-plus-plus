@@ -40,6 +40,9 @@ struct EntryEditor: View {
     /// The sections folded to their title, by title: all start open.
     @State private var folded: Set<String> = []
     @FocusState private var nameFocused: Bool
+    /// The name of a new pack being typed in the Pack row; nil while it isn't.
+    @State private var newPackName: String?
+    @FocusState private var newPackFocused: Bool
     /// Return was just pressed in the name: its pencil shows a tick for a moment.
     @State private var justNamed = false
     @Environment(\.stepAway) private var stepAway
@@ -50,6 +53,7 @@ struct EntryEditor: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             headerCard
+            packRow
             triggersSection
             if draft.isPassthroughApp {
                 passthroughApp
@@ -168,6 +172,51 @@ struct EntryEditor: View {
         Task { @MainActor in
             try? await Task.sleep(for: .seconds(1.2))
             withAnimation(.easeOut(duration: 0.25)) { justNamed = false }
+        }
+    }
+
+    // MARK: - Pack
+
+    /// Which pack the action is in, as a row like the others: "Pack" and the pack's name, opening in
+    /// place to the choices: None, each pack, and New, which becomes a field for the new pack's name
+    /// (made when the action is saved).
+    private var packRow: some View {
+        let names = model.config.packs.map(\.name)
+        let shown = draft.pack.map { names.contains($0) ? names : names + [$0] } ?? names
+        let newKey = "\u{1}new"   // the New chip; no pack can be named this
+        let apps = model.config.pack(named: draft.pack)?.apps ?? []
+        return EditorRow(symbol: "shippingbox", title: "Pack", value: draft.pack ?? "None",
+                         isOpen: openRow == "pack", toggle: { toggleRow("pack") }) {
+            VStack(alignment: .leading, spacing: 8) {
+                ChoiceChips(values: [""] + shown + [newKey],
+                            title: { $0.isEmpty ? "None" : $0 == newKey ? "New" : $0 },
+                            symbol: { $0.isEmpty ? nil : $0 == newKey ? "plus" : "shippingbox" },
+                            isChosen: { $0 != newKey && ($0.isEmpty ? nil : $0) == draft.pack }) { picked in
+                    if picked == newKey {
+                        newPackName = ""
+                        newPackFocused = true
+                    } else {
+                        state.draft.pack = picked.isEmpty ? nil : picked
+                        newPackName = nil
+                    }
+                }
+                if let typed = newPackName {
+                    TextField("The new pack's name, then return", text: Binding(get: { typed }, set: { newPackName = $0 }))
+                        .textFieldStyle(.roundedBorder)
+                        .focused($newPackFocused)
+                        .onSubmit {
+                            let name = typed.trimmingCharacters(in: .whitespaces)
+                            if !name.isEmpty {
+                                state.draft.pack = names.first { $0.caseInsensitiveCompare(name) == .orderedSame } ?? name
+                            }
+                            newPackName = nil
+                        }
+                        .onExitCommand { newPackName = nil }
+                }
+                hint(apps.isEmpty
+                     ? "A pack groups actions in the Actions list, with one switch for all of them."
+                     : "The pack works only in \(apps.map(AppIcons.name).joined(separator: ", ")), so this action does too, unless Where and when names apps of its own.")
+            }
         }
     }
 
@@ -325,8 +374,8 @@ struct EntryEditor: View {
         case .sequence:
             KeyRecorderField(keys: Binding(get: { nil }, set: { keys in
                                  guard let keys else { return }
-                                 guard !draft.sequence.isEmpty || keys.isUsableAsTrigger else {
-                                     keysProblem = "Start with keys that use ⌘, ⌃ or ⌥ (or an F-key), so typing never starts it."
+                                 guard !draft.sequence.isEmpty || keys.isUsableAsTrigger || keys.tappedModifier != nil else {
+                                     keysProblem = "Start with keys that use ⌘, ⌃ or ⌥ (or an F-key), or a tap of ⌥ on its own, so typing never starts it."
                                      return
                                  }
                                  keysProblem = nil
@@ -335,11 +384,12 @@ struct EntryEditor: View {
                              recording: recording(.sequence),
                              allowPlain: true,
                              keepsRecording: true,
+                             tapAllowed: { draft.sequence.isEmpty },
                              large: draft.sequence,
                              onClear: { draft.sequence = [] },
                              model: model)
                 .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.primary.opacity(0.04)))
-            problemOr("Press each set of keys in turn, then esc. Run it by pressing them the same way, each within a second and a half.")
+            problemOr("Press each set of keys in turn, then esc. It can start with a tap of ⌥ (or ⌘, ⌃, ⇧) on its own. Run it by pressing them the same way, each within a second and a half.")
         case .appInFront:
             AppChips(apps: $state.draft.apps, suggestions: KnownPassthroughApps.all.filter {
                 NSWorkspace.shared.urlForApplication(withBundleIdentifier: $0.bundleID) != nil
@@ -553,8 +603,8 @@ struct EntryEditor: View {
 
     /// The kinds of step, in the order + Add offers them.
     private var stepKinds: [TriggerAction.Kind] {
-        var kinds: [TriggerAction.Kind] = [.openApp, .sendKeys, .typeText, .open, .runShortcut, .runScript,
-                                           .moveWindow, .applyPreset, .wait]
+        var kinds: [TriggerAction.Kind] = [.openApp, .sendKeys, .chooseMenuItem, .typeText, .open, .runShortcut,
+                                           .runScript, .moveWindow, .applyPreset, .wait]
         if draft.whens == [.keys] && draft.steps.isEmpty { kinds.append(.passThrough) }
         return kinds
     }
@@ -571,6 +621,7 @@ struct EntryEditor: View {
         case .runScript: "Run a script"
         case .moveWindow: "Move the window"
         case .applyPreset: "Arrange windows"
+        case .chooseMenuItem: "Choose a menu item"
         }
     }
 
@@ -696,7 +747,23 @@ struct EntryEditor: View {
                 }
             }
             hint("Opens and places the preset's apps, as the Windows tab does.")
+        case .chooseMenuItem:
+            MenuItemPicker(path: step.menuPath, app: menuApp,
+                           closedApp: draft.onlyInApps ? draft.apps.first?.name : nil)
+            hint("Chosen in the app in front when it runs, as clicking it would. A greyed-out item beeps instead.")
         }
+    }
+
+    /// The app whose menus a menu-item step offers: the first app the action is limited to that's open
+    /// (none, if none is), else the app in front (the dropdown doesn't take the front).
+    private var menuApp: NSRunningApplication? {
+        let running = NSWorkspace.shared.runningApplications
+        if draft.onlyInApps, !draft.apps.isEmpty {
+            return draft.apps.lazy.compactMap { ref in running.first { $0.bundleIdentifier == ref.bundleID } }.first
+        }
+        guard let front = NSWorkspace.shared.frontmostApplication,
+              front.processIdentifier != ProcessInfo.processInfo.processIdentifier else { return nil }
+        return front
     }
 
     /// Where a window can go, grouped as the Change menu lists them.
@@ -733,11 +800,12 @@ struct EntryEditor: View {
 
     // MARK: - Where (triggers) and the passthrough app
 
-    /// Where it works (for what happens in an app: keys, clicks, typing) and when, as a list like
+    /// Where it works (for what happens in an app: keys pressed, tapped, held or in a row, clicks,
+    /// typing) and when, as a list like
     /// the others: none means everywhere, always. + Add offers "Only in some apps" and each kind of
     /// condition; each is a row that opens in place, with its bin.
     private var whereSection: some View {
-        let inApps = draft.whens.contains { [.keys, .mouseButton, .typed].contains($0) }
+        let inApps = draft.whens.contains { [.keys, .doubleTap, .hold, .sequence, .mouseButton, .typed].contains($0) }
         let limitsApps = inApps && draft.onlyInApps
         let conditions = draft.conditions.conditions
         let place = limitsApps

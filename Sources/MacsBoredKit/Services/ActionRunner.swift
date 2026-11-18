@@ -3,7 +3,7 @@ import AppKit
 import MacsBoredCore
 
 /// Does what an action says, step by step: presses other keys, types text, opens an app, a link or
-/// a file, runs one of Apple's Shortcuts or a script, moves windows, or waits. Passing keys through
+/// a file, runs one of Apple's Shortcuts or a script, moves windows, chooses a menu item, or waits. Passing keys through
 /// is the keyboard tap's job, so it never reaches here.
 @MainActor
 enum ActionRunner {
@@ -59,6 +59,10 @@ enum ActionRunner {
             if let moveWindow { moveWindow(place) } else { NSSound.beep() }
         case let .applyPreset(preset):
             if let applyPreset { applyPreset(preset.id) } else { NSSound.beep() }
+        case let .chooseMenuItem(path):
+            // The app in front: the one the keys were pressed in.
+            guard let app = NSWorkspace.shared.frontmostApplication,
+                  AppMenus.choose(path, pid: app.processIdentifier) else { NSSound.beep(); return }
         case .passThrough, .wait:
             break
         }

@@ -159,6 +159,7 @@ public struct KeyRouter: Sendable {
         guard let key = ModifierKey(event.modifiers) else {
             if event.modifiers.isEmpty, let tap = tapped, tap.releasedAt == nil, now - tap.pressedAt <= Self.doubleTapGap {
                 tapped?.releasedAt = now   // let go of, quickly: one tap
+                startRow(tapping: tap.key, at: now, setup)
             } else {
                 tapped = nil
             }
@@ -184,6 +185,16 @@ public struct KeyRouter: Sendable {
         row = (starting.map(\.id), 1, event.time)
         takenUps.insert(event.keyCode)
         return .swallow
+    }
+
+    /// A modifier tapped on its own: a row starts, when some trigger's row starts with that tap. The
+    /// tap itself has gone through as usual; nothing is taken until the next key.
+    private mutating func startRow(tapping key: ModifierKey, at time: Double, _ setup: Setup) {
+        let starting = setup.triggers.filter { trigger in
+            trigger.sequences.contains { $0.first?.tappedModifier == key }
+                && trigger.worksHere(setup.context, passthroughActive: setup.plan.isActive)
+        }
+        if !starting.isEmpty { row = (starting.map(\.id), 1, time) }
     }
 
     /// The next keys of a row under way: taken while some row still fits, its action run when one is

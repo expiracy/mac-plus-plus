@@ -9,6 +9,8 @@ public struct MacsBoredConfig: Equatable, Sendable {
     public var openAtLogin: Bool?
     public var profiles: [PassthroughProfile] = []
     public var triggers: [Trigger] = []
+    /// Actions grouped under a name, in the order the Actions list shows them; each action names its own.
+    public var packs: [ActionPack] = []
     /// Pauses passthrough from inside a passthrough app, so ⌘⇥ and the rest work again; nil for none.
     public var pauseKeys: KeyCombo? = MacsBoredConfig.defaultPauseKeys
     /// Caps Lock becomes Hyper (⌃⌥⇧⌘ held together).
@@ -20,6 +22,51 @@ public struct MacsBoredConfig: Equatable, Sendable {
     public static let defaultPauseKeys = KeyCombo(keyCode: KeyCombo.Code.p, modifiers: [.control, .option, .command])
 
     public init() {}
+
+    /// The pack named `name`, if there is one.
+    public func pack(named name: String?) -> ActionPack? {
+        guard let name else { return nil }
+        return packs.first { $0.name == name }
+    }
+
+    /// An action or passthrough app, by ID, for moving between packs.
+    public enum Entry: Hashable, Sendable {
+        case trigger(UUID)
+        case profile(UUID)
+    }
+
+    /// Puts an entry in `pack` (an existing one), or in none.
+    public mutating func move(_ entry: Entry, toPack pack: String?) {
+        if let pack, self.pack(named: pack) == nil { return }
+        switch entry {
+        case let .trigger(id):
+            if let index = triggers.firstIndex(where: { $0.id == id }) { triggers[index].pack = pack }
+        case let .profile(id):
+            if let index = profiles.firstIndex(where: { $0.id == id }) { profiles[index].pack = pack }
+        }
+    }
+
+    /// The triggers as they run, packs applied: one in a pack that's off is off, and one that names no
+    /// apps of its own works only in its pack's apps.
+    public var runningTriggers: [Trigger] {
+        triggers.map { trigger in
+            guard let pack = pack(named: trigger.pack) else { return trigger }
+            var running = trigger
+            if !pack.isEnabled { running.isEnabled = false }
+            if running.apps.isEmpty { running.apps = pack.apps }
+            return running
+        }
+    }
+
+    /// The passthrough apps as they run, packs applied: one in a pack that's off is off.
+    public var runningProfiles: [PassthroughProfile] {
+        profiles.map { profile in
+            guard let pack = pack(named: profile.pack), !pack.isEnabled else { return profile }
+            var running = profile
+            running.isEnabled = false
+            return running
+        }
+    }
 
     /// This config with each entry keeping the ID it has in `previous` when it is plainly the same
     /// entry (the same name, or the same place with no other claim), so a reload from disk doesn't
@@ -130,5 +177,24 @@ public enum MacsBoredPaths {
 
     private static func supportFolder() throws -> URL {
         try FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
+    }
+}
+
+/// Actions grouped under a name, as the Actions list draws them: switched on and off together, and,
+/// with apps, working only in those (an action that names apps of its own keeps them).
+public struct ActionPack: Hashable, Sendable, Identifiable {
+    public var name: String
+    public var isEnabled: Bool
+    public var apps: [AppRef]
+    /// Fields in the config file MacsBored doesn't know, written back as they were.
+    public var extra: JSONFields
+
+    public var id: String { name }
+
+    public init(name: String, isEnabled: Bool = true, apps: [AppRef] = [], extra: JSONFields = JSONFields()) {
+        self.name = name
+        self.isEnabled = isEnabled
+        self.apps = apps
+        self.extra = extra
     }
 }

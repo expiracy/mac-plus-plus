@@ -23,6 +23,7 @@ enum MacsBoredMenu {
             model.setEnabled(!model.config.isEnabled)
         }
         content.liveFact = statusLine(model)
+        content.renaming = model.renamingPack.map { "pack-\($0)" }
         content.warnings = warnings(model)
         content.groups = [actions(model)]
         return content
@@ -31,7 +32,8 @@ enum MacsBoredMenu {
     /// How many actions are on, after what passthrough is doing when it's doing something.
     private static func statusLine(_ model: MacsBoredModel) -> String {
         if !model.config.isEnabled { return "Off · macOS keeps all its keys" }
-        let on = model.config.triggers.filter(\.isEnabled).count + model.config.profiles.filter(\.isEnabled).count
+        // What can run: an action in a pack that's off isn't on.
+        let on = model.config.runningTriggers.filter(\.isEnabled).count + model.config.runningProfiles.filter(\.isEnabled).count
         let count = on == 0 ? "No actions on" : on == 1 ? "1 action on" : "\(on) actions on"
         let app = model.context.appName ?? "the app"
         if model.plan.isActive { return "Sending keys to \(app) · " + count.lowercased() }
@@ -64,15 +66,49 @@ enum MacsBoredMenu {
 
     // MARK: - The list
 
-    /// Every action, then every passthrough app, with + Add on the title: it opens the editor on a
-    /// blank action, where its triggers and steps are added.
+    /// The packs, each a card holding its actions, then every action in none, then every passthrough
+    /// app in none, with + Add on the title: a new action (the editor, on a blank one) or a new pack,
+    /// named in place.
     private static func actions(_ model: MacsBoredModel) -> MenuGroup {
-        let rows = model.config.triggers.map { triggerRow($0, model) } + model.config.profiles.map { profileRow($0, model) }
-        let add = MenuEntry.command("New action", symbol: "plus", key: "new-action", keepsOpen: true) { [weak model] in
-            model?.newEntry(EntryDraft())
+        let config = model.config
+        let packs = config.packs.map { packRow($0, model) }
+        let loose = config.triggers.filter { $0.pack == nil }.map { triggerRow($0, model) }
+            + config.profiles.filter { $0.pack == nil }.map { profileRow($0, model) }
+        let add = MenuEntry.submenu("New", symbol: "plus", key: "new", items: [
+            .command("New action", symbol: "bolt", key: "new-action", keepsOpen: true) { [weak model] in
+                model?.newEntry(EntryDraft())
+            },
+            .command("New pack", symbol: "shippingbox", key: "new-pack", keepsOpen: true) { [weak model] in
+                model?.startNewPack()
+            },
+        ])
+        var group = MenuGroup(title: "Actions", rows: packs + loose, add: add,
+                              empty: "None yet. Add one: when something happens, do a few things.",
+                              visibleRows: 6.5)
+        group.dropOut = { [weak model] in model?.move(dragged: $0, toPack: nil) }
+        return group
+    }
+
+    /// A pack: its actions on a card under its name, the app it works in, its switch, its pencil (its
+    /// page) and its bin (its actions stay, on their own).
+    private static func packRow(_ pack: ActionPack, _ model: MacsBoredModel) -> MenuEntry {
+        let config = model.config
+        var row = MenuEntry.toggle(pack.name, symbol: "shippingbox", isOn: pack.isEnabled, key: "pack-\(pack.name)",
+                                   secondary: ("pencil", "Edit \(pack.name)", { [weak model] in model?.editPack(pack.name) }),
+                                   trash: ("Delete \(pack.name), keeping its actions", { [weak model] in model?.deletePack(pack.name) }),
+                                   rename: { [weak model] in model?.finishNamingPack(pack.name, to: $0) }) {
+            [weak model] in model?.togglePack(pack.name)
         }
-        return MenuGroup(title: "Actions", rows: rows, add: add, empty: "None yet. Add one: when something happens, do a few things.",
-                         visibleRows: 6.5)
+        if let app = pack.apps.first, let icon = AppIcons.icon(bundleID: app.bundleID) { row.leading = .appIcon(icon) }
+        row.keepsOpen = true
+        let rows = config.triggers.filter { $0.pack == pack.name }.map { triggerRow($0, model) }
+            + config.profiles.filter { $0.pack == pack.name }.map { profileRow($0, model) }
+        let detail = pack.apps.isEmpty ? nil
+            : "in " + (pack.apps.count == 1 ? AppIcons.name(pack.apps[0]) : "\(pack.apps.count) apps")
+        row.pack = MenuPack(rows: rows, detail: detail,
+                            empty: "Empty. Drag actions here, or choose this pack in an action's editor.",
+                            drop: { [weak model] in model?.move(dragged: $0, toPack: pack.name) })
+        return row
     }
 
     private static func profileRow(_ profile: PassthroughProfile, _ model: MacsBoredModel) -> MenuEntry {
@@ -88,6 +124,7 @@ enum MacsBoredMenu {
         row.peek = [.init("When", profile.apps.map { "\(AppIcons.name($0)) is in front" }),
                     .init("Do", ["Send it your Mac's shortcuts"])]
         row.keepsOpen = true   // the pencil opens the editor page
+        row.dragID = "profile-\(profile.id)"
         return row
     }
 
@@ -105,6 +142,7 @@ enum MacsBoredMenu {
         row.trailingLabel = "Starts with"
         row.peek = [.init("When", startLabels(trigger)), .init("Do", trigger.steps.map(stepLabel), numbered: trigger.steps.count > 1)]
         row.keepsOpen = true   // the pencil opens the editor page
+        row.dragID = "trigger-\(trigger.id)"
         return row
     }
 
@@ -149,6 +187,7 @@ enum MacsBoredMenu {
         case let .runScript(script): script.firstLine.isEmpty ? "Run a script" : "Run “\(script.firstLine.prefix(20))”"
         case let .moveWindow(place): "Window to \(place.title.lowercased())"
         case let .applyPreset(preset): "Arrange “\(presetName(preset))”"
+        case let .chooseMenuItem(path): path.titles.last.map { "Choose “\($0)”" } ?? "Choose a menu item"
         }
     }
 

@@ -13,6 +13,8 @@ import SwiftUI
 public struct MenuPageView: View {
     @ObservedObject var model: MenuPageModel
     @Environment(\.openHelp) private var openHelp
+    /// The pack card a dragged row is over: outlined, as where it would go.
+    @State private var dropTarget: String?
     @State private var hoveredRow: String?
     @State private var hoveredTrash: String?
     @State private var hoveredEdit: String?
@@ -202,6 +204,7 @@ public struct MenuPageView: View {
     /// What a section's title counts: how many of its switches are on, out of how many ("4/7"), or
     /// how many rows it has when they have no switches.
     private func tally(_ entries: [MenuEntry]) -> String? {
+        let entries = entries.flatMap { $0.pack?.rows ?? [$0] }   // a pack counts what it holds
         guard !entries.isEmpty else { return nil }
         let switches = entries.compactMap(\.switchedOn)
         return switches.isEmpty ? "\(entries.count)" : "\(switches.filter { $0 }.count)/\(switches.count)"
@@ -275,7 +278,7 @@ public struct MenuPageView: View {
                     .padding(12)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .modifier(RowCard(lifted: false))
-            } else if CGFloat(group.rows.count) > group.visibleRows ?? Metric.visibleRows {
+            } else if lines(group.rows) > group.visibleRows ?? Metric.visibleRows {
                 ScrollViewReader { proxy in
                     let fades = !atFoot.contains(group.id)
                     let height = (group.visibleRows ?? Metric.visibleRows) * Metric.pitch - Metric.gap
@@ -314,6 +317,11 @@ public struct MenuPageView: View {
             }
             if !group.actions.isEmpty { rows(group.actions) }
         }
+        .dropDestination(for: String.self) { items, _ in
+            guard let dropOut = group.dropOut else { return false }
+            items.forEach(dropOut)
+            return true
+        }
     }
 
     // MARK: - Cards and rows
@@ -325,6 +333,9 @@ public struct MenuPageView: View {
         let dragging = movable != nil && drag?.group == movable?.id
         return VStack(spacing: Metric.gap) {
             ForEach(Array(entries.enumerated()), id: \.element.id) { index, entry in
+              if let pack = entry.pack {
+                packCard(entry, pack).id(entry.id)
+              } else {
                 let lifted = dragging && drag?.from == index
                 let open = model.peeking == entry.id
                 VStack(spacing: 0) {
@@ -342,11 +353,97 @@ public struct MenuPageView: View {
                                 .strokeBorder(Color.accentColor.opacity(0.45))
                         }
                     }
+                    .modifier(PackDraggable(id: entry.dragID, title: entry.title))
                     .offset(y: rowOffset(index, count: entries.count, dragging: dragging))
                     .animation(lifted ? nil : .easeOut(duration: 0.15),
                                value: rowOffset(index, count: entries.count, dragging: dragging))
                     .zIndex(lifted ? 1 : 0)
+              }
             }
+        }
+    }
+
+    private func foldPack(_ entry: MenuEntry) {
+        withAnimation(.easeOut(duration: 0.15)) { model.toggleCollapsed(entry.id, isEmpty: false) }
+    }
+
+    /// How many rows' height a list's entries take, an open pack counting its line and its rows.
+    private func lines(_ entries: [MenuEntry]) -> CGFloat {
+        CGFloat(entries.reduce(0) { total, entry in
+            guard let pack = entry.pack else { return total + 1 }
+            return total + 1 + (model.isFolded(entry.id, isEmpty: false) ? 0 : max(pack.rows.count, 1))
+        })
+    }
+
+    /// A pack: a card holding its rows, under a line with its chevron, picture, name and what it works
+    /// in, how many of its rows are on, its pencil and bin, and its switch. A click on the line folds it
+    /// to that line, as a section's title does. Switched off, its rows fade: none of them runs.
+    private func packCard(_ entry: MenuEntry, _ pack: MenuPack) -> some View {
+        let isOn = entry.switchedOn ?? true
+        let folded = model.isFolded(entry.id, isEmpty: false)
+        let shape = RoundedRectangle(cornerRadius: Metric.rowCorner + 2, style: .continuous)
+        return VStack(spacing: Metric.gap) {
+            HStack(spacing: 8) {
+                if renaming(entry) {
+                    chevron(folded: folded)
+                    icon(entry, tint: .accentColor)
+                    MenuNameField(model: model, title: entry.title)
+                } else {
+                    // The chevron, picture and name fold it, as a section's title does.
+                    Button { foldPack(entry) } label: {
+                        HStack(spacing: 8) {
+                            chevron(folded: folded)
+                            icon(entry, tint: .accentColor)
+                            Text(entry.title).fontWeight(.semibold).lineLimit(1)
+                            if let detail = pack.detail {
+                                Text(detail).font(.callout).foregroundStyle(.secondary).lineLimit(1)
+                            }
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .help(folded ? "Show what's in \(entry.title)" : "Fold \(entry.title)")
+                    .accessibilityLabel("Pack \(entry.title)")
+                    .accessibilityValue(folded ? "Collapsed" : "Expanded")
+                }
+                Spacer(minLength: 4)
+                if let tally = tally(pack.rows), tally.contains("/") {
+                    Text(tally)
+                        .font(.system(size: 11, weight: .bold).monospacedDigit())
+                        .foregroundStyle(Color.accentColor)
+                        .accessibilityLabel("\(tally.replacingOccurrences(of: "/", with: " of ")) on")
+                }
+                rowEnd(entry, dim: !isOn)
+                switchControl(entry, isOn: isOn)
+            }
+            .padding(.horizontal, 6)
+            .frame(height: Metric.row - 6)
+            .contentShape(Rectangle())
+            .onTapGesture { if !renaming(entry) { foldPack(entry) } }
+            .onHover { hover(entry, $0) }
+            if !folded {
+                if pack.rows.isEmpty {
+                    Text(pack.empty)
+                        .font(.callout).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.horizontal, 6).padding(.bottom, 4)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                } else {
+                    // Type-erased: rows draw packs, which draw rows.
+                    AnyView(rows(pack.rows)).opacity(isOn ? 1 : 0.55)
+                }
+            }
+        }
+        .padding(6)
+        .background(shape.fill(CardStyle.fill))
+        .overlay(shape.strokeBorder(dropTarget == entry.id ? Color.accentColor : CardStyle.stroke,
+                                    lineWidth: dropTarget == entry.id ? 2 : 1))
+        .dropDestination(for: String.self) { items, _ in
+            guard let drop = pack.drop else { return false }
+            items.forEach(drop)
+            return true
+        } isTargeted: { over in
+            dropTarget = over ? entry.id : (dropTarget == entry.id ? nil : dropTarget)
         }
     }
 
@@ -838,6 +935,22 @@ private struct MenuNameField: View {
                 DispatchQueue.main.async { focused = true }
             }
             .accessibilityLabel("Name")
+    }
+}
+/// A row that can be dragged into a pack: picked up anywhere but its buttons, shown as its name.
+private struct PackDraggable: ViewModifier {
+    let id: String?
+    let title: String
+
+    func body(content: Content) -> some View {
+        if let id {
+            content.draggable(id) {
+                Text(title).font(.callout).padding(.horizontal, 10).frame(height: 28)
+                    .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(Color(nsColor: .windowBackgroundColor)))
+            }
+        } else {
+            content
+        }
     }
 }
 #endif
