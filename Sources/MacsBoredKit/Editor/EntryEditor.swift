@@ -4,8 +4,8 @@ import AppKit
 import SwiftUI
 import MacsBoredCore
 
-/// The one editor, for every action, as a page of the dropdown, drawn as the Actions list is: a card
-/// with its name, what it does in a sentence and its On button; then TRIGGERS, STEPS and WHERE AND
+/// The one editor, for every action, as a page of the dropdown, drawn as the Actions list is: a line
+/// with its name, its switch and what it does in a sentence; then TRIGGERS, STEPS and WHERE AND
 /// WHEN, each a list of row cards with + Add on the heading (its kinds as pills where the new row
 /// will go), a row opening in place to its controls when clicked. Every section folds to its title. "An app is in front" is passthrough: on its own, with the app's settings in place of
 /// steps.
@@ -39,6 +39,9 @@ struct EntryEditor: View {
     private var addingStep: Bool { adding == .steps }
     /// The sections folded to their title, by title: all start open.
     @State private var folded: Set<String> = []
+    @FocusState private var nameFocused: Bool
+    /// Return was just pressed in the name: its pencil shows a tick for a moment.
+    @State private var justNamed = false
     @Environment(\.stepAway) private var stepAway
 
     /// The action only sends its own keys to the app in front.
@@ -87,26 +90,85 @@ struct EntryEditor: View {
 
     // MARK: - The card at the top
 
-    /// As the Actions page's own card: the action's name (typed in place; it follows what it does
-    /// until you give one), what it does in a sentence, and its On button.
+    /// As the Actions page's own header, one line with no card: the bolt (in the accent while the
+    /// action is on), its name (typed in place; it follows what it does until you give one) and its
+    /// switch, with what it does in a sentence under them.
     private var headerCard: some View {
-        let shape = RoundedRectangle(cornerRadius: CardStyle.corner, style: .continuous)
-        return HStack(alignment: .top, spacing: 10) {
-            VStack(alignment: .leading, spacing: 2) {
-                TextField(draft.suggestedName, text: $state.draft.customName)
-                    .textFieldStyle(.plain)
-                    .font(.system(size: 15, weight: .semibold))
-                    .help("The action's name: it follows what it does until you type one")
-                Text(draft.sentence ?? "Add what starts it and what it does.")
-                    .font(.caption).foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 8) {
+                Image(systemName: "bolt")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(draft.isEnabled ? Color.accentColor : Color.secondary)
+                    .frame(width: 16)
+                    .accessibilityHidden(true)
+                nameField
+                Toggle(draft.name, isOn: $state.draft.isEnabled)
+                    .toggleStyle(.switch)
+                    .controlSize(.small)
+                    .labelsHidden()
+                    .help(draft.isEnabled ? "Turn \(draft.name) off" : "Turn \(draft.name) on")
             }
-            Spacer(minLength: 4)
-            PowerButton(name: draft.name, isOn: draft.isEnabled) { draft.isEnabled.toggle() }
+            .frame(height: 24)
+            Text(draft.sentence ?? "Add what starts it and what it does.")
+                .font(.caption).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.leading, 24)
         }
-        .padding(.horizontal, 12).padding(.vertical, 9)
-        .background(shape.fill(CardStyle.fill))
-        .overlay(shape.strokeBorder(CardStyle.stroke))
+        .padding(.horizontal, 4)
+    }
+
+    /// The name, typed in place, drawn as a title with a pencil after it: the name it would follow
+    /// ("New action") until you type one. The field is as wide as the name, so the pencil sits just
+    /// after it; clicking either starts typing.
+    private var nameField: some View {
+        let unnamed = draft.customName.isEmpty
+        let shown = unnamed ? draft.suggestedName : draft.customName
+        let font = Font.system(size: 13, weight: .semibold)
+        return HStack(spacing: 3) {
+            // Sized by the name it shows, with room for the caret; the field over it.
+            Text(shown + " ").font(font).lineLimit(1).hidden()
+                .overlay(alignment: .leading) {
+                    TextField("Name", text: $state.draft.customName, prompt: Text(""))
+                        .textFieldStyle(.plain)
+                        .font(font)
+                        .focused($nameFocused)
+                        .onSubmit(finishNaming)
+                        .background(alignment: .leading) {
+                            // The name it would follow, drawn under the field rather than as its
+                            // placeholder; greyed while you type over it.
+                            if unnamed {
+                                Text(draft.suggestedName).font(font).lineLimit(1)
+                                    .foregroundStyle(nameFocused ? AnyShapeStyle(.tertiary) : AnyShapeStyle(.primary))
+                                    .allowsHitTesting(false)
+                                    .accessibilityHidden(true)
+                            }
+                        }
+                }
+            Button { nameFocused = true } label: {
+                Image(systemName: justNamed ? "checkmark" : "pencil")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(justNamed ? Color.green : nameFocused ? Color.accentColor : Color.secondary)
+                    .contentTransition(.symbolEffect(.replace))
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help("Rename")
+            .accessibilityLabel("Rename")
+            Spacer(minLength: 4)
+        }
+        .help("The action's name: it follows what it does until you type one")
+    }
+
+    /// Return ends typing: the caret goes, and the pencil is a green tick for a moment to say the
+    /// name took.
+    private func finishNaming() {
+        nameFocused = false
+        NSApp.keyWindow?.makeFirstResponder(nil)
+        withAnimation(.easeOut(duration: 0.15)) { justNamed = true }
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(1.2))
+            withAnimation(.easeOut(duration: 0.25)) { justNamed = false }
+        }
     }
 
     // MARK: - Triggers
