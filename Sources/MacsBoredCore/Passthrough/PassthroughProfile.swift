@@ -39,8 +39,8 @@ public struct PassthroughProfile: Hashable, Sendable, Identifiable {
     public var systemShortcuts: Set<SystemShortcutGroup>
     public var captureAllKeys: Bool
     public var modifierLayout: ModifierLayout
-    /// The pack it's in, by name; nil for none.
-    public var pack: String?
+    /// The packs it's in, by name; none for none.
+    public var packs: [String] = []
     /// Fields in the config file MacsBored doesn't know, written back as they were.
     public var extra: JSONFields
 

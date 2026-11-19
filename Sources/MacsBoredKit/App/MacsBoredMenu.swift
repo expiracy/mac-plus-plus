@@ -72,8 +72,8 @@ enum MacsBoredMenu {
     private static func actions(_ model: MacsBoredModel) -> MenuGroup {
         let config = model.config
         let packs = config.packs.map { packRow($0, model) }
-        let loose = config.triggers.filter { $0.pack == nil }.map { triggerRow($0, model) }
-            + config.profiles.filter { $0.pack == nil }.map { profileRow($0, model) }
+        let loose = config.triggers.filter(\.packs.isEmpty).map { triggerRow($0, model) }
+            + config.profiles.filter(\.packs.isEmpty).map { profileRow($0, model) }
         let add = MenuEntry.submenu("New", symbol: "plus", key: "new", items: [
             .command("New action", symbol: "bolt", key: "new-action", keepsOpen: true) { [weak model] in
                 model?.newEntry(EntryDraft())
@@ -101,8 +101,9 @@ enum MacsBoredMenu {
         }
         if let app = pack.apps.first, let icon = AppIcons.icon(bundleID: app.bundleID) { row.leading = .appIcon(icon) }
         row.keepsOpen = true
-        let rows = config.triggers.filter { $0.pack == pack.name }.map { triggerRow($0, model) }
-            + config.profiles.filter { $0.pack == pack.name }.map { profileRow($0, model) }
+        // An action in several packs shows in each.
+        let rows = config.triggers.filter { $0.packs.contains(pack.name) }.map { triggerRow($0, model, in: pack.name) }
+            + config.profiles.filter { $0.packs.contains(pack.name) }.map { profileRow($0, model, in: pack.name) }
         let detail = pack.apps.isEmpty ? nil
             : "in " + (pack.apps.count == 1 ? AppIcons.name(pack.apps[0]) : "\(pack.apps.count) apps")
         row.pack = MenuPack(rows: rows, detail: detail,
@@ -111,9 +112,12 @@ enum MacsBoredMenu {
         return row
     }
 
-    private static func profileRow(_ profile: PassthroughProfile, _ model: MacsBoredModel) -> MenuEntry {
+    /// `pack`: the pack whose card it's on, nil for none. An action in several packs has a row on
+    /// each card, each its own key, and dragged, it leaves the pack it was dragged from.
+    private static func profileRow(_ profile: PassthroughProfile, _ model: MacsBoredModel, in pack: String? = nil) -> MenuEntry {
+        let key = MacsBoredModel.dragID(.profile(profile.id), from: pack)
         var row = MenuEntry.toggle(profile.name, symbol: EntryDraft.When.appInFront.symbol, isOn: profile.isEnabled,
-                                   key: "profile-\(profile.id)",
+                                   key: key,
                                    secondary: ("pencil", "Edit", { [weak model] in model?.editProfile(profile.id) }),
                                    trash: ("Delete \(profile.name)", { [weak model] in model?.deleteProfile(profile.id) })) {
             [weak model] in model?.toggleProfile(profile.id)
@@ -124,13 +128,15 @@ enum MacsBoredMenu {
         row.peek = [.init("When", profile.apps.map { "\(AppIcons.name($0)) is in front" }),
                     .init("Do", ["Send it your Mac's shortcuts"])]
         row.keepsOpen = true   // the pencil opens the editor page
-        row.dragID = "profile-\(profile.id)"
+        row.dragID = key
+        row.countsAs = MacsBoredModel.dragID(.profile(profile.id), from: nil)
         return row
     }
 
-    private static func triggerRow(_ trigger: Trigger, _ model: MacsBoredModel) -> MenuEntry {
+    private static func triggerRow(_ trigger: Trigger, _ model: MacsBoredModel, in pack: String? = nil) -> MenuEntry {
+        let key = MacsBoredModel.dragID(.trigger(trigger.id), from: pack)
         var row = MenuEntry.toggle(trigger.name, symbol: trigger.starts.first?.kind.symbol ?? TriggerStart.Kind.keys.symbol, isOn: trigger.isEnabled,
-                                   key: "trigger-\(trigger.id)",
+                                   key: key,
                                    secondary: ("pencil", "Edit", { [weak model] in model?.editTrigger(trigger.id) }),
                                    trash: ("Delete \(trigger.name)", { [weak model] in model?.deleteTrigger(trigger.id) })) {
             [weak model] in model?.toggleTrigger(trigger.id)
@@ -142,7 +148,8 @@ enum MacsBoredMenu {
         row.trailingLabel = "Starts with"
         row.peek = [.init("When", startLabels(trigger)), .init("Do", trigger.steps.map(stepLabel), numbered: trigger.steps.count > 1)]
         row.keepsOpen = true   // the pencil opens the editor page
-        row.dragID = "trigger-\(trigger.id)"
+        row.dragID = key
+        row.countsAs = MacsBoredModel.dragID(.trigger(trigger.id), from: nil)
         return row
     }
 

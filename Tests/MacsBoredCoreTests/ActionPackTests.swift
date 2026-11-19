@@ -13,9 +13,9 @@ final class ActionPackTests: XCTestCase {
         return try XCTUnwrap(read(written).config, written)
     }
 
-    private func trigger(_ name: String, pack: String? = nil, apps: [AppRef] = []) -> Trigger {
+    private func trigger(_ name: String, pack: String? = nil, packs: [String] = [], apps: [AppRef] = []) -> Trigger {
         var trigger = Trigger(name: name, keys: [keys("hyper+\(name.prefix(1))")], action: .openApp(notes), apps: apps)
-        trigger.pack = pack
+        trigger.packs = pack.map { [$0] } ?? packs
         return trigger
     }
 
@@ -31,13 +31,13 @@ final class ActionPackTests: XCTestCase {
         XCTAssertEqual(config.packs.map(\.name), ["Excel", "Remote"])
         XCTAssertEqual(config.packs[0].apps.map(\.bundleID), ["com.microsoft.Excel"])
         XCTAssertEqual(config.packs.map(\.isEnabled), [true, false])
-        XCTAssertEqual(config.triggers.map(\.pack), ["Excel", nil])
-        XCTAssertEqual(config.profiles.first?.pack, "Remote")
+        XCTAssertEqual(config.triggers.map(\.packs), [["Excel"], []])
+        XCTAssertEqual(config.profiles.first?.packs, ["Remote"])
 
         let again = try roundTrip(config)
         XCTAssertEqual(again.packs, config.packs)
-        XCTAssertEqual(again.triggers.map(\.pack), ["Excel", nil])
-        XCTAssertEqual(again.profiles.first?.pack, "Remote")
+        XCTAssertEqual(again.triggers.map(\.packs), [["Excel"], []])
+        XCTAssertEqual(again.profiles.first?.packs, ["Remote"])
         XCTAssertTrue(again.extra.members.isEmpty && again.triggers.allSatisfy { $0.extra.members.isEmpty })
     }
 
@@ -48,6 +48,24 @@ final class ActionPackTests: XCTestCase {
         XCTAssertEqual(config.packs, [ActionPack(name: "Excel")])
         XCTAssertTrue(config.packs[0].isEnabled)
         XCTAssertTrue(config.packs[0].apps.isEmpty)
+    }
+
+    func testAnActionCanBeInSeveralPacks() throws {
+        let config = try XCTUnwrap(read("""
+        { "packs": [{ "name": "Excel" }],
+          "triggers": [{ "name": "Fit", "keys": "hyper+F", "pack": ["Excel", "Remote", "excel"], "action": { "openApp": "com.apple.Notes" } }] }
+        """).config)
+        XCTAssertEqual(config.triggers[0].packs, ["Excel", "Remote"], "a name twice, in any case, is one")
+        XCTAssertEqual(config.packs.map(\.name), ["Excel", "Remote"])
+
+        let written = ConfigFile.written(config)
+        XCTAssertTrue(written.contains(#""pack" : ["#) || written.contains(#""pack": ["#), written)
+        XCTAssertEqual(try roundTrip(config).triggers[0].packs, ["Excel", "Remote"])
+    }
+
+    func testAPackIsANameOrAListOfNames() {
+        let reading = read(#"{ "triggers": [{ "name": "X", "keys": "hyper+X", "pack": ["Excel", 3], "action": { "openApp": "com.apple.Notes" } }] }"#)
+        XCTAssertFalse(reading.issues.filter { !$0.isWarning }.isEmpty)
     }
 
     func testAnEmptyPackIsKept() throws {
@@ -78,13 +96,34 @@ final class ActionPackTests: XCTestCase {
                        [["com.microsoft.Excel"], ["com.apple.Notes"], []])
     }
 
+    func testAnActionInSeveralPacksRunsWhileAnyIsOnInTheirApps() {
+        var config = MacsBoredConfig()
+        let remote = AppRef(bundleID: "com.microsoft.rdc.macos", name: "Windows App")
+        config.packs = [ActionPack(name: "Excel", apps: [excel]), ActionPack(name: "Remote", apps: [remote]),
+                        ActionPack(name: "Anywhere")]
+        config.triggers = [trigger("Both", packs: ["Excel", "Remote"]), trigger("Wide", packs: ["Excel", "Anywhere"])]
+        XCTAssertEqual(config.runningTriggers.map(\.isEnabled), [true, true])
+        XCTAssertEqual(config.runningTriggers.map { $0.apps.map(\.bundleID) },
+                       [["com.microsoft.Excel", "com.microsoft.rdc.macos"], []])
+
+        config.packs[1].isEnabled = false   // Remote off: Both works on in Excel
+        XCTAssertEqual(config.runningTriggers[0].isEnabled, true)
+        XCTAssertEqual(config.runningTriggers[0].apps.map(\.bundleID), ["com.microsoft.Excel"])
+
+        config.packs[0].isEnabled = false   // both off: off
+        XCTAssertEqual(config.runningTriggers[0].isEnabled, false)
+    }
+
     func testAPassthroughAppInAPackThatsOffIsOff() {
         var config = MacsBoredConfig()
         config.packs = [ActionPack(name: "Remote", isEnabled: false)]
         var profile = PassthroughProfile(name: "Windows App", apps: [AppRef(bundleID: "com.microsoft.rdc.macos", name: "Windows App")])
-        profile.pack = "Remote"
+        profile.packs = ["Remote"]
         config.profiles = [profile]
         XCTAssertEqual(config.runningProfiles.map(\.isEnabled), [false])
+        config.packs.append(ActionPack(name: "Work"))
+        config.profiles[0].packs.append("Work")
+        XCTAssertEqual(config.runningProfiles.map(\.isEnabled), [true], "one of its packs is on")
     }
 
     // MARK: - The editor
@@ -92,14 +131,16 @@ final class ActionPackTests: XCTestCase {
     func testTheDraftKeepsItsPack() throws {
         let fit = trigger("Fit", pack: "Excel")
         var draft = EntryDraft(trigger: fit)
-        XCTAssertEqual(draft.pack, "Excel")
-        XCTAssertEqual(draft.trigger?.pack, "Excel")
-        draft.pack = nil
-        XCTAssertNil(draft.trigger?.pack)
+        XCTAssertEqual(draft.packs, ["Excel"])
+        XCTAssertEqual(draft.trigger?.packs, ["Excel"])
+        draft.packs.append("Remote")
+        XCTAssertEqual(draft.trigger?.packs, ["Excel", "Remote"])
+        draft.packs = []
+        XCTAssertEqual(draft.trigger?.packs, [])
 
         var profile = PassthroughProfile(name: "Windows App", apps: [AppRef(bundleID: "com.microsoft.rdc.macos", name: "Windows App")])
-        profile.pack = "Remote"
-        XCTAssertEqual(EntryDraft(profile: profile).profile?.pack, "Remote")
+        profile.packs = ["Remote"]
+        XCTAssertEqual(EntryDraft(profile: profile).profile?.packs, ["Remote"])
     }
 
     // MARK: - Moving in and out
@@ -109,19 +150,24 @@ final class ActionPackTests: XCTestCase {
         config.packs = [ActionPack(name: "Excel")]
         let fit = trigger("Fit")
         var profile = PassthroughProfile(name: "Windows App", apps: [AppRef(bundleID: "com.microsoft.rdc.macos", name: "Windows App")])
-        profile.pack = nil
+        config.packs.append(ActionPack(name: "Remote"))
         config.triggers = [fit]
         config.profiles = [profile]
 
-        config.move(.trigger(fit.id), toPack: "Excel")
-        config.move(.profile(profile.id), toPack: "Excel")
-        XCTAssertEqual(config.triggers[0].pack, "Excel")
-        XCTAssertEqual(config.profiles[0].pack, "Excel")
+        config.move(.trigger(fit.id), from: nil, to: "Excel")
+        config.move(.profile(profile.id), from: nil, to: "Excel")
+        XCTAssertEqual(config.triggers[0].packs, ["Excel"])
+        XCTAssertEqual(config.profiles[0].packs, ["Excel"])
 
-        config.move(.trigger(fit.id), toPack: nil)
-        XCTAssertNil(config.triggers[0].pack)
+        config.move(.trigger(fit.id), from: nil, to: "Remote")   // from the loose list: added
+        XCTAssertEqual(config.triggers[0].packs, ["Excel", "Remote"])
+        config.move(.trigger(fit.id), from: "Remote", to: "Excel")   // already there: just leaves Remote
+        XCTAssertEqual(config.triggers[0].packs, ["Excel"])
 
-        config.move(.trigger(fit.id), toPack: "Nowhere")   // no such pack: nothing moves
-        XCTAssertNil(config.triggers[0].pack)
+        config.move(.trigger(fit.id), from: "Excel", to: nil)
+        XCTAssertEqual(config.triggers[0].packs, [])
+
+        config.move(.trigger(fit.id), from: nil, to: "Nowhere")   // no such pack: nothing moves
+        XCTAssertEqual(config.triggers[0].packs, [])
     }
 }

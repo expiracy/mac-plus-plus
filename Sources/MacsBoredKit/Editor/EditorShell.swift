@@ -131,6 +131,11 @@ struct ChoiceChips<Value: Hashable>: View {
     var symbol: (Value) -> String? = { _ in nil }
     var icon: (Value) -> NSImage? = { _ in nil }
     var isChosen: (Value) -> Bool = { _ in false }
+    /// One more pill after the choices, laid out with them (a + New that becomes a field).
+    var last: AnyView? = nil
+    /// Deletes a choice itself (a pack), from its chip's right-click menu: the item's title and what
+    /// it does; nil for a choice that can't be.
+    var delete: ((Value) -> (title: String, action: () -> Void)?)? = nil
     let choose: (Value) -> Void
     @State private var hovered: Value?
 
@@ -158,9 +163,15 @@ struct ChoiceChips<Value: Hashable>: View {
                 }
                 .buttonStyle(.plain)
                 .onHover { hovered = $0 ? value : (hovered == value ? nil : hovered) }
+                .contextMenu {
+                    if let item = delete?(value) {
+                        Button(item.title, systemImage: "trash", role: .destructive, action: item.action)
+                    }
+                }
                 .accessibilityLabel(title(value))
                 .accessibilityAddTraits(chosen ? .isSelected : [])
             }
+            if let last { last }
         }
     }
 }

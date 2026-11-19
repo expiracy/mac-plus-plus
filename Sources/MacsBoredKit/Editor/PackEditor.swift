@@ -141,9 +141,9 @@ struct PackEditor: View {
     }
 
     private var actions: [Member] {
-        model.config.triggers.filter { $0.pack == name }.map { trigger in
+        model.config.triggers.filter { $0.packs.contains(name) }.map { trigger in
             Member(id: trigger.id, name: trigger.name) { [weak model] in model?.editTrigger(trigger.id) }
-        } + model.config.profiles.filter { $0.pack == name }.map { profile in
+        } + model.config.profiles.filter { $0.packs.contains(name) }.map { profile in
             Member(id: profile.id, name: profile.name) { [weak model] in model?.editProfile(profile.id) }
         }
     }

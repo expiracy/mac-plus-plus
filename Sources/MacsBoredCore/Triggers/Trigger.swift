@@ -384,8 +384,10 @@ public struct Trigger: Hashable, Sendable, Identifiable {
     /// Only in these apps; empty for everywhere.
     public var apps: [AppRef]
     public var conditions: ConditionSet
-    /// The pack it's in, by name; nil for none.
-    public var pack: String?
+    /// The packs it's in, by name; none for none.
+    public var packs: [String] = []
+    /// Shows a notification each time it runs, with its name and what it did.
+    public var notifies = false
     /// Fields in the config file MacsBored doesn't know, written back as they were.
     public var extra: JSONFields
 
@@ -410,6 +412,9 @@ public struct Trigger: Hashable, Sendable, Identifiable {
         self.init(id: id, name: name, isEnabled: isEnabled, keys: keys, steps: [action], apps: apps,
                   conditions: conditions, extra: extra)
     }
+
+    /// The notification it shows when it runs: its name, and its steps in a line.
+    public var notice: (title: String, body: String) { (name, steps.map(\.summary).joined(separator: " · ")) }
 
     /// Its keys go straight to the app in front, and that is all it does.
     public var passesKeysThrough: Bool { steps == [.passThrough] }
