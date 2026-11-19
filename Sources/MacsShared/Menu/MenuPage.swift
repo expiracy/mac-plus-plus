@@ -156,6 +156,9 @@ public struct MenuEntry: Identifiable {
     public var pack: MenuPack?
     /// Set when the row can be dragged into a pack (or out of one): what a drop hands over.
     public var dragID: String?
+    /// What it stands for, when another row stands for it too (an action shown in two packs), so a
+    /// title counts it once; nil: its own `id`.
+    public var countsAs: String?
 
     public var id: String { key ?? title }
 
@@ -373,8 +376,10 @@ public final class MenuPageModel: ObservableObject {
         secondary.action()
     }
 
-    /// A row with choices clicked: its bubble opens, or closes if it was open.
+    /// A row with choices clicked: its bubble opens, or closes if it was open. A name being typed in
+    /// place is kept first, as clicking away keeps it: its field would show through the bubble.
     func toggleSubmenu(_ entry: MenuEntry) {
+        if openSubmenu != entry.id { finishRename() }
         openSubmenu = openSubmenu == entry.id ? nil : entry.id
     }
 

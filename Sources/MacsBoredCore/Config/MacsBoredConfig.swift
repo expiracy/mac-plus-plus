@@ -35,33 +35,49 @@ public struct MacsBoredConfig: Equatable, Sendable {
         case profile(UUID)
     }
 
-    /// Puts an entry in `pack` (an existing one), or in none.
-    public mutating func move(_ entry: Entry, toPack pack: String?) {
-        if let pack, self.pack(named: pack) == nil { return }
+    /// Moves an entry from pack `from` (nil: from none) into pack `to` (an existing one; nil: out of
+    /// `from` only). Its other packs stay; into a pack it's already in, nothing changes.
+    public mutating func move(_ entry: Entry, from: String?, to: String?) {
+        if let to, pack(named: to) == nil { return }
+        func moved(_ packs: [String]) -> [String] {
+            var packs = packs.filter { $0 != from }
+            if let to, !packs.contains(to) { packs.append(to) }
+            return packs
+        }
         switch entry {
         case let .trigger(id):
-            if let index = triggers.firstIndex(where: { $0.id == id }) { triggers[index].pack = pack }
+            if let index = triggers.firstIndex(where: { $0.id == id }) { triggers[index].packs = moved(triggers[index].packs) }
         case let .profile(id):
-            if let index = profiles.firstIndex(where: { $0.id == id }) { profiles[index].pack = pack }
+            if let index = profiles.firstIndex(where: { $0.id == id }) { profiles[index].packs = moved(profiles[index].packs) }
         }
     }
 
-    /// The triggers as they run, packs applied: one in a pack that's off is off, and one that names no
-    /// apps of its own works only in its pack's apps.
+    /// The packs named, those there are.
+    private func packs(named names: [String]) -> [ActionPack] { names.compactMap { pack(named: $0) } }
+
+    /// The triggers as they run, packs applied. One in packs runs while any of them is on, in the
+    /// apps of those that are on (everywhere if one of them names none), unless it names apps of its
+    /// own; with all its packs off, it's off.
     public var runningTriggers: [Trigger] {
         triggers.map { trigger in
-            guard let pack = pack(named: trigger.pack) else { return trigger }
+            let packs = packs(named: trigger.packs)
+            guard !packs.isEmpty else { return trigger }
             var running = trigger
-            if !pack.isEnabled { running.isEnabled = false }
-            if running.apps.isEmpty { running.apps = pack.apps }
+            let on = packs.filter(\.isEnabled)
+            if on.isEmpty { running.isEnabled = false }
+            if running.apps.isEmpty, !on.contains(where: { $0.apps.isEmpty }) {
+                var seen = Set<String>()
+                running.apps = on.flatMap(\.apps).filter { seen.insert($0.bundleID).inserted }
+            }
             return running
         }
     }
 
-    /// The passthrough apps as they run, packs applied: one in a pack that's off is off.
+    /// The passthrough apps as they run, packs applied: one whose packs are all off is off.
     public var runningProfiles: [PassthroughProfile] {
         profiles.map { profile in
-            guard let pack = pack(named: profile.pack), !pack.isEnabled else { return profile }
+            let packs = packs(named: profile.packs)
+            guard !packs.isEmpty, !packs.contains(where: \.isEnabled) else { return profile }
             var running = profile
             running.isEnabled = false
             return running

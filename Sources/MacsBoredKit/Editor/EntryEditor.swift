@@ -53,7 +53,6 @@ struct EntryEditor: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             headerCard
-            packRow
             triggersSection
             if draft.isPassthroughApp {
                 passthroughApp
@@ -117,6 +116,14 @@ struct EntryEditor: View {
                 .font(.caption).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.leading, 24)
+            packChips
+                .padding(.leading, 24)
+                .padding(.top, 8)
+            if !draft.isPassthroughApp {
+                notifyLine
+                    .padding(.leading, 24)
+                    .padding(.top, 8)
+            }
         }
         .padding(.horizontal, 4)
     }
@@ -177,47 +184,124 @@ struct EntryEditor: View {
 
     // MARK: - Pack
 
-    /// Which pack the action is in, as a row like the others: "Pack" and the pack's name, opening in
-    /// place to the choices: None, each pack, and New, which becomes a field for the new pack's name
-    /// (made when the action is saved).
-    private var packRow: some View {
+    /// Which packs the action is in, under its name: No pack, each pack (a click puts it in or takes
+    /// it out; it can be in several; right-click to delete the pack), and + New, which opens in place
+    /// into a field for the new pack's name (made when the action is saved). Return takes the name;
+    /// esc, or clicking away with nothing typed, puts + New back.
+    private var packChips: some View {
         let names = model.config.packs.map(\.name)
-        let shown = draft.pack.map { names.contains($0) ? names : names + [$0] } ?? names
-        let newKey = "\u{1}new"   // the New chip; no pack can be named this
-        let apps = model.config.pack(named: draft.pack)?.apps ?? []
-        return EditorRow(symbol: "shippingbox", title: "Pack", value: draft.pack ?? "None",
-                         isOpen: openRow == "pack", toggle: { toggleRow("pack") }) {
-            VStack(alignment: .leading, spacing: 8) {
-                ChoiceChips(values: [""] + shown + [newKey],
-                            title: { $0.isEmpty ? "None" : $0 == newKey ? "New" : $0 },
-                            symbol: { $0.isEmpty ? nil : $0 == newKey ? "plus" : "shippingbox" },
-                            isChosen: { $0 != newKey && ($0.isEmpty ? nil : $0) == draft.pack }) { picked in
-                    if picked == newKey {
-                        newPackName = ""
-                        newPackFocused = true
-                    } else {
-                        state.draft.pack = picked.isEmpty ? nil : picked
-                        newPackName = nil
-                    }
+        let shown = names + draft.packs.filter { !names.contains($0) }
+        let packs = draft.packs.map { model.config.pack(named: $0) ?? ActionPack(name: $0) }
+        // Where its packs limit it: nowhere if one of them works everywhere.
+        let apps = packs.contains(where: \.apps.isEmpty) ? [] : packs.flatMap(\.apps)
+        var seen = Set<String>()
+        let places = apps.filter { seen.insert($0.bundleID).inserted }.map(AppIcons.name)
+        return VStack(alignment: .leading, spacing: 6) {
+            ChoiceChips(values: [""] + shown,
+                        title: { $0.isEmpty ? "No pack" : $0 },
+                        symbol: { $0.isEmpty ? nil : "shippingbox" },
+                        isChosen: { $0.isEmpty ? draft.packs.isEmpty : draft.packs.contains($0) },
+                        last: AnyView(newPackChip(names)),
+                        delete: { name in
+                            guard !name.isEmpty else { return nil }
+                            return ("Delete Pack", { deletePack(name, saved: names.contains(name)) })
+                        }) { picked in
+                if picked.isEmpty {
+                    state.draft.packs = []
+                } else if let index = draft.packs.firstIndex(of: picked) {
+                    state.draft.packs.remove(at: index)
+                } else {
+                    state.draft.packs.append(picked)
                 }
-                if let typed = newPackName {
-                    TextField("The new pack's name, then return", text: Binding(get: { typed }, set: { newPackName = $0 }))
-                        .textFieldStyle(.roundedBorder)
-                        .focused($newPackFocused)
-                        .onSubmit {
-                            let name = typed.trimmingCharacters(in: .whitespaces)
-                            if !name.isEmpty {
-                                state.draft.pack = names.first { $0.caseInsensitiveCompare(name) == .orderedSame } ?? name
-                            }
-                            newPackName = nil
-                        }
-                        .onExitCommand { newPackName = nil }
-                }
-                hint(apps.isEmpty
-                     ? "A pack groups actions in the Actions list, with one switch for all of them."
-                     : "The pack works only in \(apps.map(AppIcons.name).joined(separator: ", ")), so this action does too, unless Where and when names apps of its own.")
+                newPackName = nil
+            }
+            if !places.isEmpty {
+                hint("\(packs.count == 1 ? "The pack works" : "Its packs work") only in \(places.joined(separator: ", ")), so this action does too, unless Where and when names apps of its own.")
+            } else if packs.count > 1 {
+                hint("It runs while any of its packs is on.")
             }
         }
+    }
+
+    /// Deletes a pack from its chip's right-click menu: out of this action, and, if it's saved, out of
+    /// the list (its other actions stay, on their own), as the pack's own page deletes it.
+    private func deletePack(_ name: String, saved: Bool) {
+        withAnimation(.easeOut(duration: 0.15)) {
+            state.draft.packs.removeAll { $0 == name }
+            if saved { model.deletePack(name) }
+        }
+    }
+
+    /// + New, or, once clicked, the new pack's name being typed, in a pill of the same size.
+    @ViewBuilder private func newPackChip(_ names: [String]) -> some View {
+        let shape = RoundedRectangle(cornerRadius: 6, style: .continuous)
+        if let typed = newPackName {
+            HStack(spacing: 5) {
+                Image(systemName: "shippingbox").font(.system(size: 11, weight: .medium)).foregroundStyle(Color.accentColor)
+                TextField("Pack name", text: Binding(get: { typed }, set: { newPackName = $0 }))
+                    .textFieldStyle(.plain)
+                    .font(.callout)
+                    .frame(width: 110)
+                    .focused($newPackFocused)
+                    .onSubmit {
+                        let name = typed.trimmingCharacters(in: .whitespaces)
+                        if !name.isEmpty {
+                            let pack = (names + draft.packs).first { $0.caseInsensitiveCompare(name) == .orderedSame } ?? name
+                            if !draft.packs.contains(pack) { state.draft.packs.append(pack) }
+                        }
+                        newPackName = nil
+                    }
+                    .onExitCommand { newPackName = nil }
+                    .onChange(of: newPackFocused) { _, focused in
+                        if !focused, (newPackName ?? "").trimmingCharacters(in: .whitespaces).isEmpty { newPackName = nil }
+                    }
+            }
+            .padding(.horizontal, 9)
+            .frame(height: 26)
+            .background(shape.fill(Color(nsColor: .textBackgroundColor)))
+            .overlay(shape.strokeBorder(Color.accentColor.opacity(0.7)))
+        } else {
+            Button {
+                newPackName = ""
+                DispatchQueue.main.async { newPackFocused = true }
+            } label: {
+                HStack(spacing: 5) {
+                    Image(systemName: "plus").font(.system(size: 11, weight: .medium)).foregroundStyle(Color.accentColor)
+                    Text("New")
+                }
+                .font(.callout)
+                .padding(.horizontal, 9)
+                .frame(height: 26)
+                .background(shape.fill(Color.primary.opacity(0.06)))
+                .contentShape(shape)
+            }
+            .buttonStyle(.plain)
+            .help("Put it in a new pack")
+        }
+    }
+
+    // MARK: - When it runs
+
+    /// What happens around the action as it runs: a notification with its name and what it did.
+    /// Whether it shows a notification when it runs: a line of the header's own, under the packs,
+    /// its switch under the action's.
+    private var notifyLine: some View {
+        HStack(spacing: 6) {
+            Image(systemName: draft.notifies ? "bell.fill" : "bell")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(draft.notifies ? Color.accentColor : Color.secondary)
+                .frame(width: 14)
+                .accessibilityHidden(true)
+            Text("Notify me when it runs").font(.callout).lineLimit(1)
+            Spacer(minLength: 4)
+            Toggle("Notify me when it runs", isOn: Binding(get: { draft.notifies }, set: { on in
+                state.draft.notifies = on
+                if on { RunNotices.ask() }
+            }))
+            .toggleStyle(.switch).controlSize(.mini).labelsHidden()
+            .help("Show a notification with its name and what it did, each time it runs")
+        }
+        .frame(height: 22)
     }
 
     // MARK: - Triggers

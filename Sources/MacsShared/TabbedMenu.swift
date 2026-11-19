@@ -545,6 +545,8 @@ struct TabbedMenuView: View {
                 model.current.page()
                     .environment(\.openHelp) { model.open(TabbedMenuPage.help(for: model.current.title)) }
                     .id(model.selected)
+                    // Over the footer, so a row's choices bubble that runs past the page isn't drawn under it.
+                    .zIndex(1)
                 footer
             }
         }

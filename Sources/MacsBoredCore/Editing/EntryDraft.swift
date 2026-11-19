@@ -171,8 +171,10 @@ public struct EntryDraft: Equatable, Sendable {
     /// A trigger works only in `apps` (a passthrough app always does).
     public var onlyInApps = false
     public var apps: [AppRef] = []
-    /// The pack it goes in, by name; nil for none.
-    public var pack: String?
+    /// The packs it goes in, by name; none for none.
+    public var packs: [String] = []
+    /// Shows a notification each time it runs.
+    public var notifies = false
     public var conditions = ConditionSet()
     public var systemShortcuts = SystemShortcutGroup.defaultSet
     public var captureAllKeys = false
@@ -215,7 +217,8 @@ public struct EntryDraft: Equatable, Sendable {
         onlyInApps = !trigger.apps.isEmpty
         conditions = trigger.conditions
         triggerExtra = trigger.extra
-        pack = trigger.pack
+        packs = trigger.packs
+        notifies = trigger.notifies
         if trigger.name != suggestedName { customName = trigger.name }
     }
 
@@ -230,7 +233,7 @@ public struct EntryDraft: Equatable, Sendable {
         captureAllKeys = profile.captureAllKeys
         modifierLayout = profile.modifierLayout
         profileExtra = profile.extra
-        pack = profile.pack
+        packs = profile.packs
         if profile.name != suggestedName { customName = profile.name }
     }
 
@@ -366,7 +369,8 @@ public struct EntryDraft: Equatable, Sendable {
         var trigger = Trigger(id: triggerID, name: name, isEnabled: isEnabled, keys: whens.contains(.keys) ? keys : [],
                               steps: actions, apps: onlyInApps ? apps : [], conditions: conditions, starts: starts,
                               extra: triggerExtra)
-        trigger.pack = pack
+        trigger.packs = packs
+        trigger.notifies = notifies
         return trigger
     }
 
@@ -375,7 +379,7 @@ public struct EntryDraft: Equatable, Sendable {
         var profile = PassthroughProfile(id: profileID, name: name, isEnabled: isEnabled, apps: apps, conditions: conditions,
                                          systemShortcuts: systemShortcuts, captureAllKeys: captureAllKeys,
                                          modifierLayout: modifierLayout, extra: profileExtra)
-        profile.pack = pack
+        profile.packs = packs
         return profile
     }
 

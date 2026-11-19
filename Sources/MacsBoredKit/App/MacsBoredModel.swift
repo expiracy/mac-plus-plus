@@ -104,7 +104,7 @@ final class MacsBoredModel: ObservableObject {
         defer { lastMinute = minute }
         guard let last = lastMinute, last != minute, config.isEnabled, !isRecording else { return }
         for trigger in config.runningTriggers where trigger.fires(from: last, to: minute, context: context) {
-            ActionRunner.run(trigger.steps)
+            run(trigger)
         }
     }
 
@@ -112,7 +112,7 @@ final class MacsBoredModel: ObservableObject {
     private func appOpened(_ bundleID: String) {
         guard config.isEnabled, !isRecording else { return }
         for trigger in config.runningTriggers where trigger.fires(onOpening: bundleID, context: context) {
-            ActionRunner.run(trigger.steps)
+            run(trigger)
         }
     }
 
@@ -143,7 +143,7 @@ final class MacsBoredModel: ObservableObject {
             togglePause()
         case let .runTrigger(id):
             guard let trigger = config.triggers.first(where: { $0.id == id }) else { return }
-            ActionRunner.run(trigger.steps)
+            run(trigger)
         default:
             break
         }
@@ -240,6 +240,12 @@ final class MacsBoredModel: ObservableObject {
         onEdit(draft)
     }
 
+    /// Runs an action's steps, and shows its notification if it asks for one.
+    private func run(_ trigger: Trigger) {
+        ActionRunner.run(trigger.steps)
+        if trigger.notifies { RunNotices.post(trigger) }
+    }
+
     /// Runs an action's steps now, to try it before saving.
     func tryOut(_ steps: [TriggerAction]) {
         ActionRunner.run(steps)
@@ -298,11 +304,11 @@ final class MacsBoredModel: ObservableObject {
                 config.profiles.removeAll { $0.id == id }
             }
             // A pack named in the editor that isn't one yet is made, at the end of the list.
-            let pack: String? = switch result {
-            case let .trigger(trigger): trigger.pack
-            case let .profile(profile): profile.pack
+            let packs: [String] = switch result {
+            case let .trigger(trigger): trigger.packs
+            case let .profile(profile): profile.packs
             }
-            if let pack, config.pack(named: pack) == nil { config.packs.append(ActionPack(name: pack)) }
+            for pack in packs where config.pack(named: pack) == nil { config.packs.append(ActionPack(name: pack)) }
             switch result {
             case let .trigger(trigger):
                 for index in config.triggers.indices where config.triggers[index].apps == trigger.apps {
@@ -378,8 +384,8 @@ final class MacsBoredModel: ObservableObject {
         update { config in
             guard let index = config.packs.firstIndex(where: { $0.name == name }) else { return }
             config.packs[index].name = new
-            for i in config.triggers.indices where config.triggers[i].pack == name { config.triggers[i].pack = new }
-            for i in config.profiles.indices where config.profiles[i].pack == name { config.profiles[i].pack = new }
+            for i in config.triggers.indices { config.triggers[i].packs = config.triggers[i].packs.map { $0 == name ? new : $0 } }
+            for i in config.profiles.indices { config.profiles[i].packs = config.profiles[i].packs.map { $0 == name ? new : $0 } }
         }
         return true
     }
@@ -391,25 +397,40 @@ final class MacsBoredModel: ObservableObject {
         }
     }
 
-    /// A row dragged from the Actions list ("trigger-…", "profile-…") into a pack, or out of one (nil).
+    /// What a row of the Actions list carries when dragged: the entry, and the pack it's dragged from
+    /// ("trigger-<id>", or "trigger-<id>@<pack>" from a pack's card).
+    static func dragID(_ entry: MacsBoredConfig.Entry, from pack: String?) -> String {
+        let base = switch entry {
+        case let .trigger(id): "trigger-\(id)"
+        case let .profile(id): "profile-\(id)"
+        }
+        return pack.map { base + "@" + $0 } ?? base
+    }
+
+    /// A row dragged into a pack, or out of one (nil): it leaves the pack it was dragged from, and
+    /// keeps any others.
     func move(dragged id: String, toPack pack: String?) {
         let entry: MacsBoredConfig.Entry
-        if id.hasPrefix("trigger-"), let uuid = UUID(uuidString: String(id.dropFirst("trigger-".count))) {
+        let rest: Substring
+        if id.hasPrefix("trigger-"), let uuid = UUID(uuidString: String(id.dropFirst(8).prefix(36))) {
             entry = .trigger(uuid)
-        } else if id.hasPrefix("profile-"), let uuid = UUID(uuidString: String(id.dropFirst("profile-".count))) {
+            rest = id.dropFirst(8 + 36)
+        } else if id.hasPrefix("profile-"), let uuid = UUID(uuidString: String(id.dropFirst(8).prefix(36))) {
             entry = .profile(uuid)
+            rest = id.dropFirst(8 + 36)
         } else {
             return
         }
-        update { $0.move(entry, toPack: pack) }
+        let from = rest.hasPrefix("@") ? String(rest.dropFirst()) : nil
+        update { $0.move(entry, from: from, to: pack) }
     }
 
     /// Deletes a pack; its actions stay, on their own.
     func deletePack(_ name: String) {
         update { config in
             config.packs.removeAll { $0.name == name }
-            for i in config.triggers.indices where config.triggers[i].pack == name { config.triggers[i].pack = nil }
-            for i in config.profiles.indices where config.profiles[i].pack == name { config.profiles[i].pack = nil }
+            for i in config.triggers.indices { config.triggers[i].packs.removeAll { $0 == name } }
+            for i in config.profiles.indices { config.profiles[i].packs.removeAll { $0 == name } }
         }
     }
 

@@ -204,14 +204,19 @@ private struct Reader {
         }
         // An action naming a pack the list doesn't have still has it: on, and everywhere. A name that
         // differs only in case is that pack.
-        func listed(_ name: String?) -> String? {
-            guard let name else { return nil }
-            if let pack = config.packs.first(where: { $0.name.caseInsensitiveCompare(name) == .orderedSame }) { return pack.name }
-            config.packs.append(ActionPack(name: name))
-            return name
+        func listed(_ names: [String]) -> [String] {
+            var found: [String] = []
+            for name in names {
+                let pack = config.packs.first(where: { $0.name.caseInsensitiveCompare(name) == .orderedSame })?.name ?? {
+                    config.packs.append(ActionPack(name: name))
+                    return name
+                }()
+                if !found.contains(pack) { found.append(pack) }
+            }
+            return found
         }
-        for index in config.profiles.indices { config.profiles[index].pack = listed(config.profiles[index].pack) }
-        for index in config.triggers.indices { config.triggers[index].pack = listed(config.triggers[index].pack) }
+        for index in config.profiles.indices { config.profiles[index].packs = listed(config.profiles[index].packs) }
+        for index in config.triggers.indices { config.triggers[index].packs = listed(config.triggers[index].packs) }
         config.extra = extras(node, known: ["$schema", "enabled", "openAtLogin", "pauseKeys", "capsLockAsHyper",
                                             "setupCompleted", "packs", "passthrough", "triggers"],
                               what: "a MacsBored setting")
@@ -258,7 +263,7 @@ private struct Reader {
             modifierLayout: layout,
             extra: extras(node, known: ["name", "enabled", "apps", "shortcuts", "sendEveryKey", "modifiers", "when", "pack"],
                           what: "a passthrough field"))
-        profile.pack = packName(node)
+        profile.packs = packNames(node)
         return profile
     }
 
@@ -280,21 +285,27 @@ private struct Reader {
                               apps: apps(node),
                               conditions: conditions(node),
                               starts: starts,
-                              extra: extras(node, known: Set(["name", "enabled", "action", "steps", "apps", "when", "pack"]
+                              extra: extras(node, known: Set(["name", "enabled", "action", "steps", "apps", "when", "pack", "notify"]
                                                                  + ConfigFile.startNames),
                                             what: "a trigger field"))
-        trigger.pack = packName(node)
+        trigger.packs = packNames(node)
+        trigger.notifies = bool(node, "notify", default: false)
         return trigger
     }
 
-    /// The pack an action names, if any.
-    mutating func packName(_ node: JSONNode) -> String? {
-        guard let field = node["pack"], !field.isNull else { return nil }
-        guard let name = field.string?.trimmingCharacters(in: .whitespaces), !name.isEmpty else {
-            error(field, "“pack” is the name of a pack, in quotes.")
-            return nil
+    /// The packs an action names: one ("pack": "Excel") or several (["Excel", "Remote"]).
+    mutating func packNames(_ node: JSONNode) -> [String] {
+        guard let field = node["pack"], !field.isNull else { return [] }
+        let values = field.array ?? [field]
+        var names: [String] = []
+        for value in values {
+            guard let name = value.string?.trimmingCharacters(in: .whitespaces), !name.isEmpty else {
+                error(value, "“pack” is the name of a pack, in quotes, or a list of them.")
+                continue
+            }
+            names.append(name)
         }
-        return name
+        return names
     }
 
     /// A pack: its name, whether it's on, and the apps its actions work in.
@@ -569,7 +580,7 @@ enum Writer {
 
     static func profile(_ p: PassthroughProfile) -> JSONValue {
         var members: [(String, JSONValue)] = [("name", .string(p.name))]
-        if let pack = p.pack { members.append(("pack", .string(pack))) }
+        if let packs = packs(p.packs) { members.append(("pack", packs)) }
         if !p.isEnabled { members.append(("enabled", .bool(false))) }
         members.append(("apps", .array(p.apps.map { .string($0.bundleID) })))
         members.append(("shortcuts", .array(SystemShortcutGroup.allCases.filter(p.systemShortcuts.contains).map { .string($0.rawValue) })))
@@ -579,9 +590,18 @@ enum Writer {
         return .object(members + p.extra.members)
     }
 
+    /// An action's packs as written: a name for one, a list for several, nothing for none.
+    static func packs(_ names: [String]) -> JSONValue? {
+        switch names.count {
+        case 0: nil
+        case 1: .string(names[0])
+        default: .array(names.map { .string($0) })
+        }
+    }
+
     static func trigger(_ t: Trigger) -> JSONValue {
         var members: [(String, JSONValue)] = [("name", .string(t.name))]
-        if let pack = t.pack { members.append(("pack", .string(pack))) }
+        if let packs = packs(t.packs) { members.append(("pack", packs)) }
         func one(_ values: [JSONValue]) -> JSONValue { values.count == 1 ? values[0] : .array(values) }
         if t.starts.contains(.keys) || t.starts.isEmpty {
             members.append(("keys", t.keys.isEmpty ? .null : one(t.keys.map { .string($0.text) })))
@@ -599,6 +619,7 @@ enum Writer {
         }
         if !rows.isEmpty { members.append(("sequence", rows.count == 1 ? rows[0] : .array(rows))) }
         if !t.isEnabled { members.append(("enabled", .bool(false))) }
+        if t.notifies { members.append(("notify", .bool(true))) }
         if t.steps.count == 1 {
             members.append(("action", action(t.steps[0])))
         } else {

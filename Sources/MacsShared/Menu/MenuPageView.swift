@@ -204,7 +204,9 @@ public struct MenuPageView: View {
     /// What a section's title counts: how many of its switches are on, out of how many ("4/7"), or
     /// how many rows it has when they have no switches.
     private func tally(_ entries: [MenuEntry]) -> String? {
-        let entries = entries.flatMap { $0.pack?.rows ?? [$0] }   // a pack counts what it holds
+        var counted = Set<String>()
+        let entries = entries.flatMap { $0.pack?.rows ?? [$0] }   // a pack counts what it holds,
+            .filter { counted.insert($0.countsAs ?? $0.id).inserted }   // and a row in two packs once
         guard !entries.isEmpty else { return nil }
         let switches = entries.compactMap(\.switchedOn)
         return switches.isEmpty ? "\(entries.count)" : "\(switches.filter { $0 }.count)/\(switches.count)"

@@ -362,9 +362,20 @@ public enum ConfigSchema {
           "description": "Defaults to the first app's name."
         },
         "pack": {
-          "type": "string",
-          "minLength": 1,
-          "description": "The pack it's in, by name. A pack not in “packs” is made for it: on, and everywhere."
+          "oneOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          ],
+          "description": "The pack it's in, by name, or the packs, as a list. A pack not in “packs” is made for it: on, and everywhere."
         },
         "enabled": {
           "type": "boolean",
@@ -456,9 +467,25 @@ public enum ConfigSchema {
           "type": "string"
         },
         "pack": {
-          "type": "string",
-          "minLength": 1,
-          "description": "The pack it's in, by name. A pack not in “packs” is made for it: on, and everywhere."
+          "oneOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          ],
+          "description": "The pack it's in, by name, or the packs, as a list. A pack not in “packs” is made for it: on, and everywhere."
+        },
+        "notify": {
+          "type": "boolean",
+          "default": false,
+          "description": "Show a notification each time it runs, with its name and what it did."
         },
         "keys": {
           "oneOf": [
