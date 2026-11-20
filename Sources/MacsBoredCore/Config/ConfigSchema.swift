@@ -81,14 +81,7 @@ public enum ConfigSchema {
         "enabled": {
           "type": "boolean",
           "default": true,
-          "description": "Off, none of its actions run."
-        },
-        "apps": {
-          "type": "array",
-          "description": "Its actions work only in these apps, by bundle ID; an action naming apps of its own keeps them. Empty or missing: everywhere.",
-          "items": {
-            "$ref": "#/$defs/app"
-          }
+          "description": "Off, none of its actions run (one in another pack that's on still does)."
         }
       }
     },
@@ -422,10 +415,11 @@ public enum ConfigSchema {
         "modifiers": {
           "enum": [
             "asIs",
-            "swapCommandControl"
+            "swapCommandControl",
+            "swapCommandOption"
           ],
           "default": "asIs",
-          "description": "asIs: as the app maps them. swapCommandControl: cmd acts as Ctrl and ctrl as the Windows key."
+          "description": "asIs: as the app maps them. swapCommandControl: cmd acts as Ctrl and ctrl as the Windows key. swapCommandOption: opt acts as the Windows key and cmd as Alt."
         },
         "when": {
           "$ref": "#/$defs/when"

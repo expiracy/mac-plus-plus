@@ -191,11 +191,6 @@ struct EntryEditor: View {
     private var packChips: some View {
         let names = model.config.packs.map(\.name)
         let shown = names + draft.packs.filter { !names.contains($0) }
-        let packs = draft.packs.map { model.config.pack(named: $0) ?? ActionPack(name: $0) }
-        // Where its packs limit it: nowhere if one of them works everywhere.
-        let apps = packs.contains(where: \.apps.isEmpty) ? [] : packs.flatMap(\.apps)
-        var seen = Set<String>()
-        let places = apps.filter { seen.insert($0.bundleID).inserted }.map(AppIcons.name)
         return VStack(alignment: .leading, spacing: 6) {
             ChoiceChips(values: [""] + shown,
                         title: { $0.isEmpty ? "No pack" : $0 },
@@ -215,9 +210,7 @@ struct EntryEditor: View {
                 }
                 newPackName = nil
             }
-            if !places.isEmpty {
-                hint("\(packs.count == 1 ? "The pack works" : "Its packs work") only in \(places.joined(separator: ", ")), so this action does too, unless Where and when names apps of its own.")
-            } else if packs.count > 1 {
+            if draft.packs.count > 1 {
                 hint("It runs while any of its packs is on.")
             }
         }
@@ -1034,7 +1027,8 @@ struct EntryEditor: View {
             }
         }
         FormGroup(title: "Keys", folding: .folded,
-                  summary: draft.captureAllKeys ? "Every key to the app" : draft.modifierLayout.title) {
+                  summary: draft.captureAllKeys ? "Every key to the app" + (draft.modifierLayout == .asIs ? "" : ", " + draft.modifierLayout.title)
+                      : draft.modifierLayout.title) {
             FormRow(divider: false) {
                 Text("Send every key straight to the app")
                     .help("Ahead of global shortcuts from Raycast, Alfred or window managers. Only triggers that name this app still run.")
@@ -1042,12 +1036,11 @@ struct EntryEditor: View {
                 Toggle("Send every key straight to the app", isOn: $state.draft.captureAllKeys)
                     .toggleStyle(.switch).controlSize(.small).labelsHidden()
             }
-            FormRow(label: "Modifiers") {
-                Picker("Modifier keys", selection: $state.draft.modifierLayout) {
-                    ForEach(ModifierLayout.allCases, id: \.self) { Text($0.title).tag($0) }
-                }
-                .pickerStyle(.segmented).controlSize(.small).labelsHidden().fixedSize()
-                Spacer()
+            // Chips, which wrap, as the layouts' names don't fit side by side.
+            FormRow(label: "Modifiers", top: true) {
+                ChoiceChips(values: ModifierLayout.allCases, title: \.title,
+                            isChosen: { $0 == draft.modifierLayout }) { state.draft.modifierLayout = $0 }
+                    .padding(.vertical, 1)
             }
         }
     }

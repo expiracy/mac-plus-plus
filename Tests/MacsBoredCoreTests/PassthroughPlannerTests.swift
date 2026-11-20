@@ -27,6 +27,22 @@ final class PassthroughPlannerTests: XCTestCase {
         XCTAssertEqual(plan.modifierLayout, .swapCommandControl)
     }
 
+    func testProfilesForTheSameAppActTogether() {
+        let shortcuts = PassthroughProfile(name: "Windows App", apps: [windowsApp], systemShortcuts: [.spotlight],
+                                           captureAllKeys: true)
+        let optionKey = PassthroughProfile(name: "Option is the Windows key", apps: [windowsApp], systemShortcuts: [.appSwitcher],
+                                           modifierLayout: .swapCommandOption)
+        let plan = PassthroughPlanner.plan(profiles: [shortcuts, optionKey], context: context(windowsApp.bundleID))
+        XCTAssertEqual(plan.disabledHotKeys, [1, 2, 6, 27, 64, 65], "the shortcuts either sends")
+        XCTAssertTrue(plan.captureAllKeys)
+        XCTAssertEqual(plan.modifierLayout, .swapCommandOption)
+        XCTAssertEqual(plan.profileID, shortcuts.id)
+
+        var off = optionKey
+        off.isEnabled = false   // switched off, the other acts alone
+        XCTAssertEqual(PassthroughPlanner.plan(profiles: [shortcuts, off], context: context(windowsApp.bundleID)).modifierLayout, .asIs)
+    }
+
     func testAProfileWaitsForItsConditions() {
         let profile = PassthroughProfile(name: "Citrix", apps: [citrix],
                                          conditions: ConditionSet(conditions: [Condition(.fullScreen)]))

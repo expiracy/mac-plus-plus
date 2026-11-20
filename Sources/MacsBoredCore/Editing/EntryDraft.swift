@@ -383,14 +383,24 @@ public struct EntryDraft: Equatable, Sendable {
         return profile
     }
 
+    /// What an app-in-front entry does, after "While Windows App is in front, ": "it gets your Mac's
+    /// shortcuts, and ⌥ is the Windows key and ⌘ is Alt".
+    public static func passthroughDoes(shortcuts: Bool, everyKey: Bool, layout: ModifierLayout) -> String {
+        var parts: [String] = []
+        if everyKey { parts.append("it gets every key") } else if shortcuts { parts.append("it gets your Mac's shortcuts") }
+        if let phrase = layout.phrase { parts.append(phrase) }
+        return parts.isEmpty ? "it gets your keys as they are" : parts.joined(separator: ", and ")
+    }
+
     /// The action in a sentence, as far as it's set up: "When I press Hyper W or click button 4,
     /// open Notes, then open Safari." Nil before any trigger is chosen.
     public var sentence: String? {
         guard !whens.isEmpty else { return nil }
         if isPassthroughApp {
             let names = apps.map(\.name)
-            return names.isEmpty ? "While an app you choose is in front, it gets your Mac's shortcuts."
-                : "While \(Self.joined(names, "or")) is in front, it gets your Mac's shortcuts."
+            let app = names.isEmpty ? "an app you choose" : Self.joined(names, "or")
+            return "While \(app) is in front, " + Self.passthroughDoes(shortcuts: !systemShortcuts.isEmpty,
+                                                                       everyKey: captureAllKeys, layout: modifierLayout) + "."
         }
         let when = Self.joined(whens.map(triggerPhrase), "or")
         let does: String

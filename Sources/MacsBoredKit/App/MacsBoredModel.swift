@@ -353,6 +353,11 @@ final class MacsBoredModel: ObservableObject {
 
     // MARK: - Packs
 
+    /// Puts an action in a pack, keeping its others, or takes it out of that one.
+    func setInPack(_ entry: MacsBoredConfig.Entry, _ pack: String, _ inside: Bool) {
+        update { $0.move(entry, from: inside ? nil : pack, to: inside ? pack : nil) }
+    }
+
     func togglePack(_ name: String) {
         update { config in
             guard let index = config.packs.firstIndex(where: { $0.name == name }) else { return }
@@ -388,13 +393,6 @@ final class MacsBoredModel: ObservableObject {
             for i in config.profiles.indices { config.profiles[i].packs = config.profiles[i].packs.map { $0 == name ? new : $0 } }
         }
         return true
-    }
-
-    func setPackApps(_ name: String, _ apps: [AppRef]) {
-        update { config in
-            guard let index = config.packs.firstIndex(where: { $0.name == name }) else { return }
-            config.packs[index].apps = apps
-        }
     }
 
     /// What a row of the Actions list carries when dragged: the entry, and the pack it's dragged from

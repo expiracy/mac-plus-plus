@@ -55,20 +55,14 @@ public struct MacsBoredConfig: Equatable, Sendable {
     /// The packs named, those there are.
     private func packs(named names: [String]) -> [ActionPack] { names.compactMap { pack(named: $0) } }
 
-    /// The triggers as they run, packs applied. One in packs runs while any of them is on, in the
-    /// apps of those that are on (everywhere if one of them names none), unless it names apps of its
-    /// own; with all its packs off, it's off.
+    /// The triggers as they run, packs applied: one in packs runs while any of them is on, and with
+    /// all its packs off, it's off. A pack only groups its actions; where each works is its own.
     public var runningTriggers: [Trigger] {
         triggers.map { trigger in
             let packs = packs(named: trigger.packs)
-            guard !packs.isEmpty else { return trigger }
+            guard !packs.isEmpty, !packs.contains(where: \.isEnabled) else { return trigger }
             var running = trigger
-            let on = packs.filter(\.isEnabled)
-            if on.isEmpty { running.isEnabled = false }
-            if running.apps.isEmpty, !on.contains(where: { $0.apps.isEmpty }) {
-                var seen = Set<String>()
-                running.apps = on.flatMap(\.apps).filter { seen.insert($0.bundleID).inserted }
-            }
+            running.isEnabled = false
             return running
         }
     }
@@ -201,16 +195,14 @@ public enum MacsBoredPaths {
 public struct ActionPack: Hashable, Sendable, Identifiable {
     public var name: String
     public var isEnabled: Bool
-    public var apps: [AppRef]
     /// Fields in the config file MacsBored doesn't know, written back as they were.
     public var extra: JSONFields
 
     public var id: String { name }
 
-    public init(name: String, isEnabled: Bool = true, apps: [AppRef] = [], extra: JSONFields = JSONFields()) {
+    public init(name: String, isEnabled: Bool = true, extra: JSONFields = JSONFields()) {
         self.name = name
         self.isEnabled = isEnabled
-        self.apps = apps
         self.extra = extra
     }
 }

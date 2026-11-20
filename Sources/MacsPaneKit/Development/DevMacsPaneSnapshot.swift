@@ -309,14 +309,14 @@ enum DevMacsPaneSnapshot {
         let page = NewShortcutModel(app: model)
         if preset, let first = model.config.presets.first { page.pickPreset(first.id) }
         return NewShortcutView(model: page)
-            .frame(width: 384)
+            .frame(width: 440)
             .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color(nsColor: .windowBackgroundColor)))
     }
 
     /// A page of the dropdown at the dropdown's width, on its background.
     private static func page(_ model: MenuPageModel) -> some View {
         MenuPageView(model: model)
-            .frame(width: 384)
+            .frame(width: 440)
             .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color(nsColor: .windowBackgroundColor)))
     }
 
