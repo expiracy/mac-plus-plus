@@ -60,6 +60,21 @@ final class KeyRouterTests: XCTestCase {
         XCTAssertEqual(router.route(controlUp, s), .modify(keyCode: KeyCombo.Code.rightCommand, modifiers: []))
     }
 
+    func testOptionAsWindowsSwapsOptionAndCommand() {
+        var router = KeyRouter()
+        let s = setup(plan(capture: false, layout: .swapCommandOption), bundleID: windowsApp.bundleID)
+        // ⌥E reaches the app as ⌘E (Windows+E there); ⌘Tab as ⌥Tab (Alt+Tab); ⌃ stays Ctrl.
+        XCTAssertEqual(router.route(down(KeyCombo(keyCode: 14, modifiers: .option)), s), .modify(keyCode: 14, modifiers: .command))
+        XCTAssertEqual(router.route(down(KeyCombo(keyCode: KeyCombo.Code.tab, modifiers: .command)), s),
+                       .modify(keyCode: KeyCombo.Code.tab, modifiers: .option))
+        XCTAssertEqual(router.route(down(KeyCombo(keyCode: 8, modifiers: .control)), s), .pass)
+        // The ⌥ key alone reads as the ⌘ key, on its side: tapping it opens Start.
+        let optionKey = KeyEvent(phase: .flagsChanged, keyCode: KeyCombo.Code.leftOption, modifiers: .option)
+        XCTAssertEqual(router.route(optionKey, s), .modify(keyCode: KeyCombo.Code.leftCommand, modifiers: .command))
+        let commandUp = KeyEvent(phase: .flagsChanged, keyCode: KeyCombo.Code.rightCommand, modifiers: [])
+        XCTAssertEqual(router.route(commandUp, s), .modify(keyCode: KeyCombo.Code.rightOption, modifiers: []))
+    }
+
     func testSwapLayoutAppliesToCapturedKeysToo() {
         var router = KeyRouter()
         let s = setup(plan(capture: true, layout: .swapCommandControl, pid: 3), bundleID: windowsApp.bundleID)

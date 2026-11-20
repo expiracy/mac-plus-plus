@@ -250,7 +250,7 @@ private struct Reader {
         var layout = ModifierLayout.asIs
         if let text = string(node, "modifiers") {
             if let parsed = ModifierLayout(rawValue: text) { layout = parsed } else {
-                error(node["modifiers"]!, "“\(text)” isn't a modifier layout. Use asIs or swapCommandControl.")
+                error(node["modifiers"]!, "“\(text)” isn't a modifier layout. Use asIs, swapCommandControl or swapCommandOption.")
             }
         }
         var profile = PassthroughProfile(
@@ -315,7 +315,13 @@ private struct Reader {
             error(node, "A pack needs a “name”.")
             return nil
         }
-        return ActionPack(name: name, isEnabled: bool(node, "enabled", default: true), apps: apps(node),
+        // Packs once limited their actions to apps; they only group them now.
+        if node["apps"] != nil {
+            issues.append(.init(line: node["apps"]?.line,
+                                message: "Packs only group actions now, so “\(name)”'s “apps” was left out. Name apps on its actions instead.",
+                                isWarning: true))
+        }
+        return ActionPack(name: name, isEnabled: bool(node, "enabled", default: true),
                           extra: extras(node, known: ["name", "enabled", "apps"], what: "a pack field"))
     }
 
@@ -574,7 +580,6 @@ enum Writer {
     static func pack(_ p: ActionPack) -> JSONValue {
         var members: [(String, JSONValue)] = [("name", .string(p.name))]
         if !p.isEnabled { members.append(("enabled", .bool(false))) }
-        if !p.apps.isEmpty { members.append(("apps", .array(p.apps.map { .string($0.bundleID) }))) }
         return .object(members + p.extra.members)
     }
 

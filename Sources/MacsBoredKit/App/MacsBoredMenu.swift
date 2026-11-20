@@ -99,14 +99,11 @@ enum MacsBoredMenu {
                                    rename: { [weak model] in model?.finishNamingPack(pack.name, to: $0) }) {
             [weak model] in model?.togglePack(pack.name)
         }
-        if let app = pack.apps.first, let icon = AppIcons.icon(bundleID: app.bundleID) { row.leading = .appIcon(icon) }
         row.keepsOpen = true
         // An action in several packs shows in each.
         let rows = config.triggers.filter { $0.packs.contains(pack.name) }.map { triggerRow($0, model, in: pack.name) }
             + config.profiles.filter { $0.packs.contains(pack.name) }.map { profileRow($0, model, in: pack.name) }
-        let detail = pack.apps.isEmpty ? nil
-            : "in " + (pack.apps.count == 1 ? AppIcons.name(pack.apps[0]) : "\(pack.apps.count) apps")
-        row.pack = MenuPack(rows: rows, detail: detail,
+        row.pack = MenuPack(rows: rows, detail: nil,
                             empty: "Empty. Drag actions here, or choose this pack in an action's editor.",
                             drop: { [weak model] in model?.move(dragged: $0, toPack: pack.name) })
         return row
@@ -124,9 +121,12 @@ enum MacsBoredMenu {
         }
         // No picture: what starts an action can be several things.
         row.leading = .none
-        row.trailing = "In front"
+        row.trailing = profileLabel(profile)
+        var does: [String] = []
+        if profile.captureAllKeys { does.append("Send it every key") } else if !profile.systemShortcuts.isEmpty { does.append("Send it your Mac's shortcuts") }
+        if profile.modifierLayout != .asIs { does.append(profile.modifierLayout.title) }
         row.peek = [.init("When", profile.apps.map { "\(AppIcons.name($0)) is in front" }),
-                    .init("Do", ["Send it your Mac's shortcuts"])]
+                    .init("Do", does.isEmpty ? ["Nothing yet"] : does)]
         row.keepsOpen = true   // the pencil opens the editor page
         row.dragID = key
         row.countsAs = MacsBoredModel.dragID(.profile(profile.id), from: nil)
@@ -151,6 +151,13 @@ enum MacsBoredMenu {
         row.dragID = key
         row.countsAs = MacsBoredModel.dragID(.trigger(trigger.id), from: nil)
         return row
+    }
+
+    /// What an app-in-front entry does, in a word or two: one that only remaps keys says how ("⌥ is
+    /// Windows"); one that sends the app shortcuts is "In front".
+    static func profileLabel(_ profile: PassthroughProfile) -> String {
+        guard profile.systemShortcuts.isEmpty, !profile.captureAllKeys, profile.modifierLayout != .asIs else { return "In front" }
+        return profile.modifierLayout.title.components(separatedBy: ", ").first ?? "In front"
     }
 
     /// What sets it off, in a word or two: "⌃⌥N", "Button 4", "Zoom opens", ";sig", "9:00", and how

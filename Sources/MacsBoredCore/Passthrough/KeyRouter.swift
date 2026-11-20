@@ -234,19 +234,25 @@ public struct KeyRouter: Sendable {
     /// The key and modifiers as `layout` has them reach the app.
     static func remap(_ keyCode: UInt16, _ modifiers: KeyCombo.Modifiers, phase: KeyEvent.Phase,
                       layout: ModifierLayout) -> (UInt16, KeyCombo.Modifiers) {
-        switch layout {
-        case .asIs:
-            return (keyCode, modifiers)
-        case .swapCommandControl:
-            var swapped = modifiers.subtracting([.command, .control])
-            if modifiers.contains(.command) { swapped.insert(.control) }
-            if modifiers.contains(.control) { swapped.insert(.command) }
-            guard phase == .flagsChanged else { return (keyCode, swapped) }
-            let keys: [UInt16: UInt16] = [
-                KeyCombo.Code.leftCommand: KeyCombo.Code.leftControl, KeyCombo.Code.leftControl: KeyCombo.Code.leftCommand,
-                KeyCombo.Code.rightCommand: KeyCombo.Code.rightControl, KeyCombo.Code.rightControl: KeyCombo.Code.rightCommand,
-            ]
-            return (keys[keyCode] ?? keyCode, swapped)
+        guard let (a, b) = layout.swapped else { return (keyCode, modifiers) }
+        var swapped = modifiers.subtracting([a, b])
+        if modifiers.contains(a) { swapped.insert(b) }
+        if modifiers.contains(b) { swapped.insert(a) }
+        guard phase == .flagsChanged, let (left, right) = keys(a), let (otherLeft, otherRight) = keys(b) else {
+            return (keyCode, swapped)
+        }
+        // The modifier key itself, going down or up, reads as the other one, on the same side.
+        let keys = [left: otherLeft, otherLeft: left, right: otherRight, otherRight: right]
+        return (keys[keyCode] ?? keyCode, swapped)
+    }
+
+    /// A swappable modifier's left and right keys.
+    private static func keys(_ modifier: KeyCombo.Modifiers) -> (UInt16, UInt16)? {
+        switch modifier {
+        case .command: (KeyCombo.Code.leftCommand, KeyCombo.Code.rightCommand)
+        case .control: (KeyCombo.Code.leftControl, KeyCombo.Code.rightControl)
+        case .option: (KeyCombo.Code.leftOption, KeyCombo.Code.rightOption)
+        default: nil
         }
     }
 }

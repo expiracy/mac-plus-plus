@@ -144,7 +144,7 @@ enum ActionRunner {
         let source = CGEventSource(stateID: .hidSystemState)
         for down in [true, false] {
             guard let event = CGEvent(keyboardEventSource: source, virtualKey: keys.keyCode, keyDown: down) else { continue }
-            event.flags = CGEventFlags(rawValue: FlagBits.rewrite(0, to: keys.modifiers, swappedCommandControl: false))
+            event.flags = CGEventFlags(rawValue: FlagBits.rewrite(0, to: keys.modifiers, swapping: nil))
             event.setIntegerValueField(.eventSourceUserData, value: KeyboardTap.ownEventTag)
             event.post(tap: .cgSessionEventTap)
         }

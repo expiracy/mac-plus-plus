@@ -30,22 +30,23 @@ public enum FlagBits {
         }
     }
 
-    /// `raw` with exactly `modifiers` held: when ⌘ and ⌃ were swapped, each one's side bits move to the
-    /// other; a modifier added (by Hyper) reads as its left key; one removed loses both sides. Every
-    /// other bit (Caps Lock, keypad, fn) is left as it was.
-    public static func rewrite(_ raw: UInt64, to modifiers: KeyCombo.Modifiers, swappedCommandControl: Bool) -> UInt64 {
+    /// `raw` with exactly `modifiers` held: when two modifiers were swapped (⌘ and ⌃, or ⌘ and ⌥), each
+    /// one's side bits move to the other; a modifier added (by Hyper) reads as its left key; one removed
+    /// loses both sides. Every other bit (Caps Lock, keypad, fn) is left as it was.
+    public static func rewrite(_ raw: UInt64, to modifiers: KeyCombo.Modifiers,
+                               swapping pair: (KeyCombo.Modifiers, KeyCombo.Modifiers)?) -> UInt64 {
         var raw = raw
-        if swappedCommandControl {
-            let control = bits(.control), command = bits(.command)
-            let controlPart = raw & (control.main | control.sides)
-            let commandPart = raw & (command.main | command.sides)
-            raw &= ~(controlPart | commandPart)
-            if controlPart & control.main != 0 { raw |= command.main }
-            if controlPart & control.left != 0 { raw |= command.left }
-            if controlPart & control.right != 0 { raw |= command.right }
-            if commandPart & command.main != 0 { raw |= control.main }
-            if commandPart & command.left != 0 { raw |= control.left }
-            if commandPart & command.right != 0 { raw |= control.right }
+        if let (first, second) = pair {
+            let one = bits(first), other = bits(second)
+            let onePart = raw & (one.main | one.sides)
+            let otherPart = raw & (other.main | other.sides)
+            raw &= ~(onePart | otherPart)
+            if onePart & one.main != 0 { raw |= other.main }
+            if onePart & one.left != 0 { raw |= other.left }
+            if onePart & one.right != 0 { raw |= other.right }
+            if otherPart & other.main != 0 { raw |= one.main }
+            if otherPart & other.left != 0 { raw |= one.left }
+            if otherPart & other.right != 0 { raw |= one.right }
         }
         for bits in all {
             let held = raw & bits.main != 0

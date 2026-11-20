@@ -18,11 +18,33 @@ public enum ModifierLayout: String, CaseIterable, Sendable {
     case asIs
     /// ⌘ and ⌃ swap places, so ⌘C is Ctrl+C in the session and ⌃ becomes the Windows key.
     case swapCommandControl
+    /// ⌥ and ⌘ swap places, so ⌥ is the Windows key and ⌘ is Alt: the order of a Windows keyboard's
+    /// Ctrl, Windows and Alt.
+    case swapCommandOption
 
     public var title: String {
         switch self {
         case .asIs: "As the app maps them"
         case .swapCommandControl: "⌘ is Ctrl, ⌃ is Windows"
+        case .swapCommandOption: "⌥ is Windows, ⌘ is Alt"
+        }
+    }
+
+    /// What it does to the keys, as a phrase: "⌥ is the Windows key and ⌘ is Alt".
+    public var phrase: String? {
+        switch self {
+        case .asIs: nil
+        case .swapCommandControl: "⌘ is Ctrl and ⌃ the Windows key"
+        case .swapCommandOption: "⌥ is the Windows key and ⌘ is Alt"
+        }
+    }
+
+    /// The two modifiers that trade places; nil when none do.
+    public var swapped: (KeyCombo.Modifiers, KeyCombo.Modifiers)? {
+        switch self {
+        case .asIs: nil
+        case .swapCommandControl: (.command, .control)
+        case .swapCommandOption: (.command, .option)
         }
     }
 }

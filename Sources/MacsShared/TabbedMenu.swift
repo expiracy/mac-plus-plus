@@ -492,7 +492,7 @@ struct TabbedMenuView: View {
     @State private var hovered: Int?
 
     private enum Metric {
-        static let width: CGFloat = 384
+        static let width: CGFloat = 440
         static let edge: CGFloat = 12
         static let corner: CGFloat = 10
         /// The band across the top (the tabs, or the navigation bar) and the gap over it: one

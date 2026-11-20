@@ -23,13 +23,12 @@ final class ActionPackTests: XCTestCase {
 
     func testPacksAndTheActionsInThemReadAndWrite() throws {
         let config = try XCTUnwrap(read("""
-        { "packs": [{ "name": "Excel", "apps": ["com.microsoft.Excel"] }, { "name": "Remote", "enabled": false }],
+        { "packs": [{ "name": "Excel" }, { "name": "Remote", "enabled": false }],
           "passthrough": [{ "name": "Windows App", "apps": ["com.microsoft.rdc.macos"], "pack": "Remote" }],
           "triggers": [{ "name": "Fit", "keys": "hyper+F", "pack": "Excel", "action": { "openApp": "com.apple.Notes" } },
                        { "name": "Loose", "keys": "hyper+L", "action": { "openApp": "com.apple.Notes" } }] }
         """).config)
         XCTAssertEqual(config.packs.map(\.name), ["Excel", "Remote"])
-        XCTAssertEqual(config.packs[0].apps.map(\.bundleID), ["com.microsoft.Excel"])
         XCTAssertEqual(config.packs.map(\.isEnabled), [true, false])
         XCTAssertEqual(config.triggers.map(\.packs), [["Excel"], []])
         XCTAssertEqual(config.profiles.first?.packs, ["Remote"])
@@ -47,7 +46,18 @@ final class ActionPackTests: XCTestCase {
         """).config)
         XCTAssertEqual(config.packs, [ActionPack(name: "Excel")])
         XCTAssertTrue(config.packs[0].isEnabled)
-        XCTAssertTrue(config.packs[0].apps.isEmpty)
+    }
+
+    func testAPacksOldAppsAreLeftOutWithAWarning() throws {
+        let reading = read("""
+        { "packs": [{ "name": "Excel", "apps": ["com.microsoft.Excel"] }],
+          "triggers": [{ "name": "Fit", "keys": "hyper+F", "pack": "Excel", "action": { "openApp": "com.apple.Notes" } }] }
+        """)
+        let config = try XCTUnwrap(reading.config)
+        XCTAssertEqual(config.packs, [ActionPack(name: "Excel")])
+        XCTAssertEqual(reading.issues.filter(\.isWarning).count, 1)
+        XCTAssertFalse(ConfigFile.written(config).contains("com.microsoft.Excel"), "written back without them")
+        XCTAssertEqual(config.runningTriggers[0].apps, [], "a pack doesn't limit where its actions work")
     }
 
     func testAnActionCanBeInSeveralPacks() throws {
@@ -88,28 +98,20 @@ final class ActionPackTests: XCTestCase {
         XCTAssertEqual(config.runningTriggers.map(\.isEnabled), [false, true])
     }
 
-    func testAPacksAppsLimitItsActionsUnlessTheyNameTheirOwn() {
+    func testAnActionKeepsItsOwnAppsInAPack() {
         var config = MacsBoredConfig()
-        config.packs = [ActionPack(name: "Excel", apps: [excel])]
-        config.triggers = [trigger("Fit", pack: "Excel"), trigger("Own", pack: "Excel", apps: [notes]), trigger("Loose")]
-        XCTAssertEqual(config.runningTriggers.map { $0.apps.map(\.bundleID) },
-                       [["com.microsoft.Excel"], ["com.apple.Notes"], []])
+        config.packs = [ActionPack(name: "Excel")]
+        config.triggers = [trigger("Own", pack: "Excel", apps: [excel]), trigger("Anywhere", pack: "Excel")]
+        XCTAssertEqual(config.runningTriggers.map { $0.apps.map(\.bundleID) }, [["com.microsoft.Excel"], []])
     }
 
-    func testAnActionInSeveralPacksRunsWhileAnyIsOnInTheirApps() {
+    func testAnActionInSeveralPacksRunsWhileAnyIsOn() {
         var config = MacsBoredConfig()
-        let remote = AppRef(bundleID: "com.microsoft.rdc.macos", name: "Windows App")
-        config.packs = [ActionPack(name: "Excel", apps: [excel]), ActionPack(name: "Remote", apps: [remote]),
-                        ActionPack(name: "Anywhere")]
-        config.triggers = [trigger("Both", packs: ["Excel", "Remote"]), trigger("Wide", packs: ["Excel", "Anywhere"])]
-        XCTAssertEqual(config.runningTriggers.map(\.isEnabled), [true, true])
-        XCTAssertEqual(config.runningTriggers.map { $0.apps.map(\.bundleID) },
-                       [["com.microsoft.Excel", "com.microsoft.rdc.macos"], []])
-
-        config.packs[1].isEnabled = false   // Remote off: Both works on in Excel
+        config.packs = [ActionPack(name: "Excel"), ActionPack(name: "Remote")]
+        config.triggers = [trigger("Both", packs: ["Excel", "Remote"])]
         XCTAssertEqual(config.runningTriggers[0].isEnabled, true)
-        XCTAssertEqual(config.runningTriggers[0].apps.map(\.bundleID), ["com.microsoft.Excel"])
-
+        config.packs[1].isEnabled = false   // Remote off: Excel still runs it
+        XCTAssertEqual(config.runningTriggers[0].isEnabled, true)
         config.packs[0].isEnabled = false   // both off: off
         XCTAssertEqual(config.runningTriggers[0].isEnabled, false)
     }

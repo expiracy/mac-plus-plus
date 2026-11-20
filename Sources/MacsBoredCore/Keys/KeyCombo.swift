@@ -81,5 +81,7 @@ public struct KeyCombo: Hashable, Sendable {
         public static let rightCommand: UInt16 = 54
         public static let leftControl: UInt16 = 59
         public static let rightControl: UInt16 = 62
+        public static let leftOption: UInt16 = 58
+        public static let rightOption: UInt16 = 61
     }
 }

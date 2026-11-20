@@ -246,4 +246,13 @@ final class ConfigFileTests: XCTestCase {
         XCTAssertEqual(config.triggers.first?.apps.map(\.name), ["Safari"])
         XCTAssertEqual(reading.issues, [ConfigFile.Issue(line: nil, message: "“Snippet” typed text, which MacsBored no longer does, so it was left out.", isWarning: true)])
     }
+
+    func testOptionAsTheWindowsKeyReadsAndWrites() throws {
+        let config = try XCTUnwrap(ConfigFile.read(Data("""
+        { "passthrough": [{ "name": "Windows App", "apps": ["com.microsoft.rdc.macos"], "modifiers": "swapCommandOption" }] }
+        """.utf8)).config)
+        XCTAssertEqual(config.profiles.first?.modifierLayout, .swapCommandOption)
+        let again = try XCTUnwrap(ConfigFile.read(Data(ConfigFile.written(config).utf8)).config)
+        XCTAssertEqual(again.profiles.first?.modifierLayout, .swapCommandOption)
+    }
 }

@@ -184,6 +184,16 @@ final class EntryDraftTests: XCTestCase {
         XCTAssertEqual(named.customName, "", "a name that was only the suggestion keeps following it")
     }
 
+    func testAnAppInFrontSaysWhatItDoes() {
+        var draft = EntryDraft(profile: PassthroughProfile(name: "Windows App", apps: [windows], systemShortcuts: [.spotlight]))
+        XCTAssertEqual(draft.sentence, "While Windows App is in front, it gets your Mac's shortcuts.")
+        draft.systemShortcuts = []
+        draft.modifierLayout = .swapCommandOption
+        XCTAssertEqual(draft.sentence, "While Windows App is in front, ⌥ is the Windows key and ⌘ is Alt.")
+        draft.captureAllKeys = true
+        XCTAssertEqual(draft.sentence, "While Windows App is in front, it gets every key, and ⌥ is the Windows key and ⌘ is Alt.")
+    }
+
     func testEditingAPassthroughAppOpensOnAnAppInFront() {
         let profile = PassthroughProfile(name: "Work PC", apps: [windows], systemShortcuts: [.spotlight], modifierLayout: .swapCommandControl)
         let draft = EntryDraft(profile: profile)

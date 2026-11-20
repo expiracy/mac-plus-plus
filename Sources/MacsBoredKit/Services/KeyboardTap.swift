@@ -89,7 +89,7 @@ final class KeyboardTap {
                            time: Double(event.timestamp) / 1_000_000_000)
         let setup = self.setup
         let decision = router.route(key, setup)
-        let swapped = setup.plan.isActive && setup.plan.modifierLayout == .swapCommandControl
+        let swapped = setup.plan.isActive ? setup.plan.modifierLayout.swapped : nil
 
         if type == .keyDown {
             if decision == .pass, let typed = typedTrigger(event, key, setup) {
@@ -139,11 +139,11 @@ final class KeyboardTap {
     }
 
     /// Keys pressed and let go, marked as this app's own so the tap lets them by.
-    private static func press(keyCode: UInt16, modifiers: KeyCombo.Modifiers, swapped: Bool) {
+    private static func press(keyCode: UInt16, modifiers: KeyCombo.Modifiers, swapped: (KeyCombo.Modifiers, KeyCombo.Modifiers)?) {
         let source = CGEventSource(stateID: .hidSystemState)
         for down in [true, false] {
             guard let event = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: down) else { continue }
-            event.flags = CGEventFlags(rawValue: FlagBits.rewrite(0, to: modifiers, swappedCommandControl: swapped))
+            event.flags = CGEventFlags(rawValue: FlagBits.rewrite(0, to: modifiers, swapping: swapped))
             event.setIntegerValueField(.eventSourceUserData, value: ownEventTag)
             event.post(tap: .cgSessionEventTap)
         }
@@ -196,10 +196,11 @@ final class KeyboardTap {
         }
     }
 
-    private static func rewrite(_ event: CGEvent, keyCode: UInt16, modifiers: KeyCombo.Modifiers, swapped: Bool) {
+    private static func rewrite(_ event: CGEvent, keyCode: UInt16, modifiers: KeyCombo.Modifiers,
+                                swapped: (KeyCombo.Modifiers, KeyCombo.Modifiers)?) {
         event.setIntegerValueField(.keyboardEventKeycode, value: Int64(keyCode))
         event.flags = CGEventFlags(rawValue: FlagBits.rewrite(event.flags.rawValue, to: modifiers,
-                                                              swappedCommandControl: swapped))
+                                                              swapping: swapped))
     }
 }
 
