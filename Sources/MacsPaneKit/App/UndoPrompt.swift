@@ -5,7 +5,7 @@ import SwiftUI
 import MacsPaneCore
 
 /// The live activity that grows out of the notch after a preset or pairing moves your windows: what
-/// happened on the left of the camera, Undo on its right. It bounces out from the notch's own width and
+/// happened on the left of the camera, Undo and an × to dismiss it on its right. It bounces out from the notch's own width and
 /// its contents spring out from behind the camera; it goes back in by itself after a few seconds (held
 /// while the pointer is on it), contents first, and never takes focus from the windows it just arranged.
 final class UndoPromptController {
@@ -37,7 +37,7 @@ final class UndoPromptController {
         self.panel = panel
         self.activity = activity
         activity.configure(title: "", symbol: "square.grid.2x2", glyph: nil,
-                           notch: screen.notchGeometry.collapsedSize, undo: {}, hover: { _ in })
+                           notch: screen.notchGeometry.collapsedSize, undo: {}, dismiss: {}, hover: { _ in })
         place(on: screen)
         idle()
         panel.orderFrontRegardless()
@@ -59,6 +59,7 @@ final class UndoPromptController {
                                    }
                                }
                            },
+                           dismiss: { [weak self] in self?.close(animated: true) },
                            hover: { [weak self] inside in self?.hover(inside) })
         place(on: screen)
         panel.ignoresMouseEvents = false
@@ -151,7 +152,7 @@ final class UndoActivityLayers: NSView {
     private let shape = UndoShapeView()
     private let clip = UndoClipView()
     private let titleView = NSHostingView(rootView: UndoActivityTitle(title: "", symbol: "", glyph: nil))
-    private let buttonView = NSHostingView(rootView: UndoActivityButton(undo: {}))
+    private let buttonView = NSHostingView(rootView: UndoActivityButton(undo: {}, dismiss: {}))
     private var hover: (Bool) -> Void = { _ in }
     private var notchWidth: CGFloat = 0
     private var isOpen = false
@@ -181,7 +182,7 @@ final class UndoActivityLayers: NSView {
 
     /// Lay out one activity, closed: the shape at the notch's width, its contents hidden.
     func configure(title: String, symbol: String, glyph: [SnapGlyphBox]?, notch: CGSize,
-                   undo: @escaping () -> Void, hover: @escaping (Bool) -> Void) {
+                   undo: @escaping () -> Void, dismiss: @escaping () -> Void, hover: @escaping (Bool) -> Void) {
         self.hover = hover
         notchWidth = notch.width
         let width = notch.width + 2 * UndoPromptController.wing
@@ -190,7 +191,7 @@ final class UndoActivityLayers: NSView {
         shape.frame = bounds
         clip.frame = bounds
         titleView.rootView = UndoActivityTitle(title: title, symbol: symbol, glyph: glyph)
-        buttonView.rootView = UndoActivityButton(undo: undo)
+        buttonView.rootView = UndoActivityButton(undo: undo, dismiss: dismiss)
         let inset = SnapHeading.inset(fromCorner: m.rootTopRadiusCompact)
         let edge = UndoPromptController.overshoot + inset
         let side = (width - notch.width - 16) / 2 - inset   // the room either side of the camera
@@ -398,11 +399,32 @@ struct UndoActivityTitle: View {
     }
 }
 
-/// Right of the camera: the blue Undo.
+/// Right of the camera: the blue Undo, then an × that tucks the activity away and leaves the windows
+/// where they are.
 struct UndoActivityButton: View {
     let undo: () -> Void
+    let dismiss: () -> Void
 
     var body: some View {
+        HStack(spacing: 6) {
+            undoButton
+            Button(action: dismiss) {
+                Image(systemName: "xmark")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(.white.opacity(0.75))
+                    .frame(width: 22, height: 22)
+                    .background(Circle().fill(.white.opacity(0.14)))
+                    .contentShape(Circle())
+            }
+            .buttonStyle(.plain)
+            .help("Dismiss, leaving the windows where they are")
+            .accessibilityLabel("Dismiss")
+        }
+        // The panel never takes focus; draw the buttons as the front window would.
+        .environment(\.controlActiveState, .key)
+    }
+
+    private var undoButton: some View {
         Button(action: undo) {
             Label("Undo", systemImage: "arrow.uturn.backward")
                 .font(.system(size: 12, weight: .semibold))
@@ -415,8 +437,6 @@ struct UndoActivityButton: View {
         }
         .buttonStyle(.plain)
         .help("Put the windows back where they were")
-        // The panel never takes focus; draw Undo as the front window would.
-        .environment(\.controlActiveState, .key)
     }
 }
 #endif

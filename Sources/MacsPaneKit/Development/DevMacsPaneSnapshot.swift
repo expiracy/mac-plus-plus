@@ -272,7 +272,7 @@ enum DevMacsPaneSnapshot {
             UndoActivityTitle(title: "Coding applied", symbol: "square.grid.2x2",
                               glyph: ResolvedPickerPreset(seed.presets[0]).boxes)
             Spacer(minLength: 185 + 16)
-            UndoActivityButton {}.fixedSize()
+            UndoActivityButton(undo: {}, dismiss: {}).fixedSize()
         }
         .padding(.horizontal, SnapHeading.inset(fromCorner: m.rootTopRadiusCompact))
         .frame(width: width, height: 32)

@@ -22,7 +22,7 @@ applying presets, drawing layouts and settings) starts from MacsPane's page of t
   dims, drag to draw a box, drag a box to move it, pull its edges to resize it, and click *Choose an
   app* in each box to say what opens there. Clicking a preset in the menu (or dropping a window on it
   in the notch) puts each app back in its place, opening any that are closed, and an Undo grows out
-  of the notch for a few seconds; its pencil opens it in the editor again.
+  of the notch for a few seconds, with an × to dismiss it sooner. A preset's pencil opens it in the editor again.
 - **Layouts.** *Add* beside *Layouts in the notch* offers the same two: *Draw one…* opens the same editor with empty boxes,
   for the picker, and *From the current desktop* saves one with a box where each window is. Every
   layout, built-in or your own, is listed in the menu with a pencil to change it, a bin to delete it
